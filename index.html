@@ -1,0 +1,1480 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caso Fastly</title>
+<!--
+  Trabajo final de Estadística · Ingeniería de Sistemas · Universidad Católica Luis Amigó
+  Caso 4: Colapso de Fastly y el apagón de The New York Times / Reddit.
+  Archivo autocontenido: abrir directamente en el navegador (requiere internet solo para las librerías CDN).
+  Librerías: Chart.js (gráficas) y KaTeX (fórmulas). Los datos de Caso4.xlsx van incrustados.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0a0d13; --panel:#111620; --panel2:#161d2a; --line:#252e40; --line2:#334058;
+  --text:#e8edf4; --muted:#93a0b4; --dim:#647086;
+  --orange:#ff7a1a; --red:#ff3d4a; --amber:#ffc247; --green:#2fe0a0; --blue:#59c4ff; --violet:#a98bff;
+  --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+  --radius:14px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:400 18px/1.55 Inter,system-ui,Segoe UI,Roboto,sans-serif;
+  display:grid;grid-template-rows:auto 4px auto 1fr auto;height:100%;overflow:hidden;
+  background-image:radial-gradient(1200px 500px at 85% -10%,rgba(255,90,30,.10),transparent 60%),
+  linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);
+  background-size:auto,32px 32px,32px 32px}
+button,select,input{font:inherit;color:inherit}
+h1,h2,h3{margin:0;line-height:1.2}
+code,.mono{font-family:var(--mono)}
+
+/* ---------- Barra superior ---------- */
+.topbar{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);background:rgba(10,13,19,.85);backdrop-filter:blur(6px);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.04em;font-size:15px;text-transform:uppercase}
+.brand .led{width:10px;height:10px;border-radius:50%;background:var(--red);box-shadow:0 0 12px var(--red);animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.25}}
+.brand small{color:var(--muted);font-weight:500;letter-spacing:.02em;text-transform:none}
+.spacer{flex:1}
+.badge{font:500 13px var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+.btn{background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:600;font-size:15px;transition:.15s}
+.btn:hover{border-color:var(--orange);color:#fff}
+.btn.primary{background:linear-gradient(135deg,#ff7a1a,#ff3d4a);border-color:transparent;color:#fff}
+.btn.primary:hover{filter:brightness(1.1)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.progress{background:var(--line)}
+.progress .bar{height:100%;width:0;background:linear-gradient(90deg,var(--orange),var(--red));transition:width .45s ease}
+.dots{display:flex;gap:6px;padding:8px 18px;overflow-x:auto;border-bottom:1px solid var(--line)}
+.dot{flex:0 0 auto;border:1px solid var(--line);background:transparent;border-radius:999px;padding:3px 11px;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.dot.on{border-color:var(--orange);color:#fff;background:rgba(255,122,26,.15)}
+.dot.done{color:var(--text)}
+
+/* ---------- Escenario ---------- */
+main{overflow:auto;padding:22px clamp(16px,3vw,40px) 40px}
+.scene{max-width:1400px;margin:0 auto;animation:sceneIn .5s ease}
+@keyframes sceneIn{from{opacity:0;transform:translateY(12px)}}
+.kicker{font:600 13px var(--mono);letter-spacing:.14em;color:var(--orange);text-transform:uppercase}
+.scene h1{font-size:clamp(26px,3.2vw,40px);font-weight:800;margin:6px 0 8px}
+.lead{color:var(--muted);max-width:980px;margin:0 0 18px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,1fr);gap:20px;align-items:start}
+.grid2.even{grid-template-columns:1fr 1fr}
+.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;min-width:0}
+.card h3{font-size:17px;margin-bottom:10px;display:flex;gap:8px;align-items:center}
+.card h3 .tag{font:600 11px var(--mono);letter-spacing:.1em;color:var(--orange);border:1px solid rgba(255,122,26,.4);border-radius:6px;padding:2px 6px}
+.meaning{border-left:4px solid var(--orange);background:linear-gradient(90deg,rgba(255,122,26,.08),var(--panel) 45%)}
+.meaning p{margin:.3em 0}
+.warn{border-left:4px solid var(--amber);background:linear-gradient(90deg,rgba(255,194,71,.10),var(--panel) 50%)}
+.muted{color:var(--muted)}
+.small{font-size:15px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.tile{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.tile .l{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.tile .v{font:700 26px var(--mono);margin-top:2px}
+.tile .x{font:400 12px var(--mono);color:var(--dim);margin-top:4px;word-break:break-all}
+.ok{color:var(--green)} .bad{color:var(--red)} .hl{color:var(--orange)} .am{color:var(--amber)}
+.pill{display:inline-block;font:600 13px var(--mono);padding:2px 9px;border-radius:999px;border:1px solid currentColor}
+
+/* ---------- Panel ¿Cómo se hizo? ---------- */
+details.how{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+details.how>summary{list-style:none;cursor:pointer;padding:14px 18px;font-weight:700;display:flex;align-items:center;gap:10px;user-select:none}
+details.how>summary::-webkit-details-marker{display:none}
+details.how>summary::before{content:'ƒ';font:700 16px var(--mono);color:#111;background:var(--orange);border-radius:6px;width:24px;height:24px;display:grid;place-items:center}
+details.how>summary::after{content:'▸';margin-left:auto;color:var(--muted);transition:.2s}
+details.how[open]>summary::after{transform:rotate(90deg)}
+.how-body{padding:0 18px 16px;display:flex;flex-direction:column;gap:12px}
+.hstep{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel2)}
+.hstep .t{font-size:14px;font-weight:700;color:var(--amber);margin-bottom:4px}
+.hstep .f{overflow-x:auto;overflow-y:hidden;padding:2px 0}
+.hstep .r{font:600 15px var(--mono);color:var(--green);margin-top:4px}
+.xl{display:flex;align-items:center;gap:8px;margin-top:6px;font:500 13px var(--mono);color:#b6f0c9;background:#0d1a14;border:1px solid #1f4a33;border-radius:8px;padding:5px 8px}
+.xl b{color:#3ddc84;font-weight:700;font-size:11px;letter-spacing:.08em}
+.xl span{flex:1;word-break:break-all}
+.xl button{background:none;border:1px solid #1f4a33;border-radius:6px;color:#9fe3b9;font-size:11px;padding:2px 6px;cursor:pointer}
+.katex{font-size:1.08em}
+.katex-display{margin:.3em 0;overflow-x:auto;overflow-y:hidden;max-width:100%}
+
+/* ---------- Tablas ---------- */
+.tbl-wrap{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:#1a2232;font-weight:700;text-align:right;cursor:default;z-index:1}
+th.sort{cursor:pointer}
+th.sort:hover{color:var(--orange)}
+td:first-child,th:first-child{text-align:left}
+tbody tr:hover{background:rgba(255,255,255,.03)}
+td.mono,th.mono{font-family:var(--mono)}
+.chip-hit{color:var(--green);font-weight:700}.chip-miss{color:var(--red);font-weight:700}
+input[type=search],select{background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:8px 12px;font-size:15px;outline:none}
+input[type=search]:focus,select:focus{border-color:var(--orange)}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:10px;overflow:hidden}
+.seg button{background:none;border:0;padding:7px 12px;cursor:pointer;font-size:14px;color:var(--muted)}
+.seg button.on{background:rgba(255,122,26,.18);color:#fff}
+
+/* ---------- Animaciones de revelado ---------- */
+.rv{opacity:0;animation:rv .55s ease forwards;animation-delay:var(--d,0s)}
+@keyframes rv{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+svg .rv{transform-box:fill-box}
+.grow{transform-origin:left center;animation:grow .9s cubic-bezier(.2,.8,.2,1) forwards;animation-delay:var(--d,0s);transform:scaleX(0)}
+@keyframes grow{to{transform:scaleX(1)}}
+.pulse{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+svg text{font-family:Inter,sans-serif}
+
+/* ---------- Escenas específicas ---------- */
+.canvas-wrap{position:relative;width:100%;}
+.canvas-wrap canvas{display:block;width:100%;border-radius:12px;background:#080b11;border:1px solid var(--line)}
+.alert-banner{display:flex;align-items:center;gap:10px;font:700 14px var(--mono);color:#fff;background:rgba(255,61,74,.15);border:1px solid rgba(255,61,74,.5);border-radius:10px;padding:8px 12px;margin-bottom:12px}
+.hyp{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:baseline}
+.hyp .h{font:700 18px var(--mono)}
+.emp-row{display:grid;grid-template-columns:56px 1fr auto;gap:10px;align-items:center;margin:10px 0;font-size:15px}
+.emp-bar{position:relative;height:22px;background:var(--panel2);border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.emp-bar .real{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--orange),var(--red));width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+.emp-bar .theo{position:absolute;top:-3px;bottom:-3px;width:3px;background:#fff;box-shadow:0 0 6px #fff}
+.verdict{border-radius:var(--radius);padding:16px 18px;font-weight:700;font-size:19px;display:flex;gap:12px;align-items:center}
+.verdict.yes{background:rgba(47,224,160,.10);border:1px solid rgba(47,224,160,.5);color:var(--green)}
+.verdict.no{background:rgba(255,61,74,.10);border:1px solid rgba(255,61,74,.5);color:#ff8a92}
+.verdict .ico{font-size:28px}
+.steps{display:flex;flex-direction:column;gap:12px}
+.step{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 16px;opacity:.12;transition:opacity .5s,border-color .5s;filter:grayscale(1)}
+.step.on{opacity:1;filter:none}
+.step.cur{border-color:var(--orange);box-shadow:0 0 0 1px rgba(255,122,26,.4),0 0 24px rgba(255,122,26,.12)}
+.step>div{overflow-x:auto;overflow-y:hidden}
+.step .n{font:700 12px var(--mono);color:var(--orange);letter-spacing:.12em}
+.sticky{position:sticky;top:0}
+.big-num{font:800 clamp(34px,4vw,54px) var(--mono);line-height:1}
+.decision-tbl td,.decision-tbl th{text-align:center}
+.decision-tbl td:first-child{text-align:left}
+/* Sentencia */
+.court{background:#f3ead7;color:#231a10;border-radius:6px;padding:clamp(18px,3vw,40px);font-family:Georgia,'Times New Roman',serif;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden}
+.court h2{text-align:center;letter-spacing:.2em;font-size:clamp(20px,2.4vw,30px);margin-bottom:4px}
+.court .sub{text-align:center;font-style:italic;color:#5c4a35;margin-bottom:16px}
+.court .vs{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;text-align:center;margin:12px 0 18px}
+.court .party{border:2px solid #2d2215;border-radius:6px;padding:10px;font-weight:700}
+.court .party.win{background:#2d2215;color:#f3ead7}
+.court ol{margin:6px 0 12px 0;padding-left:22px}
+.court .resuelve{border-top:2px solid #2d2215;padding-top:12px;font-size:1.05em}
+.stamp-row{display:flex;justify-content:flex-end;margin-top:18px}
+.stamp{display:inline-block;transform:rotate(-8deg) scale(3);opacity:0;border:6px double;border-radius:10px;padding:8px 18px;font:900 clamp(22px,3vw,40px) Inter,sans-serif;letter-spacing:.1em;animation:stamp .5s cubic-bezier(.3,1.6,.5,1) forwards;animation-delay:1.6s;pointer-events:none;text-align:center;line-height:1.1}
+.stamp small{display:block;font-size:.4em;letter-spacing:.05em}
+.stamp.red{color:#c4161c;border-color:#c4161c}
+.stamp.green{color:#0f7a43;border-color:#0f7a43}
+@keyframes stamp{to{opacity:.9;transform:rotate(-8deg) scale(1)}}
+.err-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.err{border-radius:12px;padding:16px;border:1px solid var(--line);background:var(--panel)}
+.err h3{font-size:18px}
+.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);background:var(--panel2);border:1px solid var(--orange);border-radius:12px;padding:10px 16px;font-size:15px;opacity:0;transition:.35s;z-index:60;max-width:92vw}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.toast.err{border-color:var(--red)}
+/* Navegación inferior */
+.navbar{display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--line);background:rgba(10,13,19,.9)}
+.navbar .where{flex:1;text-align:center;color:var(--muted);font-size:15px}
+.navbar .where b{color:var(--text)}
+.kbd{font:600 12px var(--mono);border:1px solid var(--line2);border-bottom-width:2px;border-radius:5px;padding:0 5px;color:var(--muted)}
+.chart-box{position:relative;height:340px}
+.chart-box.sm{height:280px}
+@media (max-width:1000px){
+  .grid2,.grid2.even{grid-template-columns:minmax(0,1fr)}
+  .err-grid{grid-template-columns:1fr}
+  body{font-size:17px}
+  .sticky{position:static}
+}
+@media (max-width:600px){
+  .brand small,.badge{display:none}
+  .navbar .where .kbdh{display:none}
+  .court .vs{grid-template-columns:1fr}
+  .emp-row{grid-template-columns:44px 1fr auto}
+  th,td{white-space:normal;padding:6px}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="led"></span>Incidente #4 · Fastly CDN <small>· Prueba de proporción</small></div>
+  <div class="spacer"></div>
+  <span class="badge" id="dsBadge">cargando…</span>
+</header>
+<div class="progress"><div class="bar" id="progBar"></div></div>
+<nav class="dots" id="dots"></nav>
+<main id="stage"></main>
+<footer class="navbar">
+  <button class="btn" id="btnPrev">← Anterior</button>
+  <div class="where" id="where"></div>
+  <button class="btn primary" id="btnNext">Siguiente →</button>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<!-- =====================================================================
+     DATOS INCRUSTADOS: copia exacta de Caso4.xlsx (hoja 1, 200 registros).
+     Todos los cálculos del programa se hacen sobre estos datos.
+     ===================================================================== -->
+<script>
+const EMBEDDED = {"sheet":"Necesito los datos que me adjun","cols":["Request_ID","Cache_Hit"],"rows":[[1,1],[2,1],[3,0],[4,1],[5,1],[6,1],[7,0],[8,1],[9,1],[10,1],[11,0],[12,1],[13,1],[14,1],[15,0],[16,1],[17,1],[18,1],[19,0],[20,1],[21,1],[22,1],[23,0],[24,1],[25,1],[26,1],[27,0],[28,1],[29,1],[30,1],[31,0],[32,1],[33,1],[34,1],[35,0],[36,1],[37,1],[38,1],[39,0],[40,1],[41,1],[42,1],[43,0],[44,1],[45,1],[46,1],[47,0],[48,1],[49,1],[50,1],[51,0],[52,1],[53,1],[54,1],[55,0],[56,1],[57,1],[58,1],[59,0],[60,1],[61,1],[62,1],[63,0],[64,1],[65,1],[66,1],[67,0],[68,1],[69,1],[70,1],[71,0],[72,1],[73,1],[74,1],[75,0],[76,1],[77,1],[78,1],[79,0],[80,1],[81,1],[82,1],[83,0],[84,1],[85,1],[86,1],[87,0],[88,1],[89,1],[90,1],[91,0],[92,1],[93,1],[94,1],[95,0],[96,1],[97,1],[98,1],[99,0],[100,1],[101,1],[102,1],[103,0],[104,1],[105,1],[106,1],[107,0],[108,1],[109,1],[110,1],[111,0],[112,1],[113,1],[114,1],[115,0],[116,1],[117,1],[118,1],[119,0],[120,1],[121,1],[122,1],[123,0],[124,1],[125,1],[126,1],[127,0],[128,1],[129,1],[130,1],[131,0],[132,1],[133,1],[134,1],[135,0],[136,1],[137,1],[138,1],[139,0],[140,1],[141,1],[142,1],[143,0],[144,1],[145,1],[146,1],[147,0],[148,1],[149,1],[150,1],[151,0],[152,1],[153,1],[154,1],[155,0],[156,1],[157,1],[158,1],[159,0],[160,1],[161,1],[162,1],[163,0],[164,1],[165,1],[166,1],[167,0],[168,1],[169,1],[170,1],[171,0],[172,1],[173,1],[174,1],[175,0],[176,1],[177,1],[178,1],[179,0],[180,1],[181,1],[182,1],[183,0],[184,1],[185,1],[186,1],[187,0],[188,1],[189,1],[190,1],[191,0],[192,1],[193,1],[194,1],[195,0],[196,1],[197,1],[198,1],[199,1],[200,1]]};
+</script>
+
+<script>
+/* =====================================================================
+   1. MOTOR ESTADÍSTICO
+   Todas las funciones replican las de Excel (nombres en español entre
+   paréntesis) para que los resultados coincidan con el archivo de la
+   estudiante.
+   ===================================================================== */
+// ==STATS-BEGIN==
+const Stats = (() => {
+  /** Φ(z): función de distribución normal estándar acumulada
+   *  (DISTR.NORM.ESTAND.N(z;VERDADERO)). Algoritmo 5666 de Hart (1968)
+   *  según G. West (2005); precisión ~1e-14, muy por encima de 4 decimales. */
+  function normCdf(x) {
+    const ax = Math.abs(x);
+    let c;
+    if (ax > 37) c = 0;
+    else {
+      const e = Math.exp(-ax * ax / 2);
+      if (ax < 7.07106781186547) {
+        let b = 3.52624965998911e-02 * ax + 0.700383064443688;
+        b = b * ax + 6.37396220353165;
+        b = b * ax + 33.912866078383;
+        b = b * ax + 112.079291497871;
+        b = b * ax + 221.213596169931;
+        b = b * ax + 220.206867912376;
+        c = e * b;
+        b = 8.83883476483184e-02 * ax + 1.75566716318264;
+        b = b * ax + 16.064177579207;
+        b = b * ax + 86.7807322029461;
+        b = b * ax + 296.564248779674;
+        b = b * ax + 637.333633378831;
+        b = b * ax + 793.826512519948;
+        b = b * ax + 440.413735824752;
+        c = c / b;
+      } else {
+        let b = ax + 0.65;
+        b = ax + 4 / b; b = ax + 3 / b; b = ax + 2 / b; b = ax + 1 / b;
+        c = e / b / 2.506628274631;
+      }
+    }
+    return x > 0 ? 1 - c : c;
+  }
+
+  /** Densidad normal estándar φ(z). */
+  const normPdf = z => Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI);
+
+  /** Φ⁻¹(p) (INV.NORM.ESTAND(p)). Algoritmo de P. J. Acklam + un paso de
+   *  refinamiento de Halley: error < 1e-12. */
+  function normInv(p) {
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+    const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+    const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+    const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+    const pl = 0.02425;
+    let q, r, x;
+    if (p < pl) {
+      q = Math.sqrt(-2 * Math.log(p));
+      x = (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+    } else if (p <= 1 - pl) {
+      q = p - 0.5; r = q * q;
+      x = (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+    } else {
+      q = Math.sqrt(-2 * Math.log(1 - p));
+      x = -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+    }
+    const e = normCdf(x) - p;
+    const u = e * Math.sqrt(2 * Math.PI) * Math.exp(x * x / 2);
+    return x - u / (1 + x * u / 2);
+  }
+
+  const sum = a => a.reduce((s, v) => s + v, 0);
+  const mean = a => sum(a) / a.length;                       // PROMEDIO
+  const sorted = a => [...a].sort((x, y) => x - y);
+  function median(a) {                                        // MEDIANA
+    const s = sorted(a), n = s.length;
+    return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+  }
+  /** CUARTIL.INC: interpolación lineal en la posición (n−1)·q. */
+  function quantileInc(a, q) {
+    const s = sorted(a), h = (s.length - 1) * q, lo = Math.floor(h), hi = Math.ceil(h);
+    return s[lo] + (h - lo) * (s[hi] - s[lo]);
+  }
+  /** MODA.UNO: el primer valor (en el orden de los datos) con la frecuencia
+   *  máxima; null si ningún valor se repite (#N/A en Excel). */
+  function modeExcel(a) {
+    const key = v => +v.toPrecision(12), cnt = new Map();
+    a.forEach(v => cnt.set(key(v), (cnt.get(key(v)) || 0) + 1));
+    let best = null, bc = 1;
+    for (const v of a) { const c = cnt.get(key(v)); if (c > bc) { bc = c; best = key(v); } }
+    return { value: best, count: bc, distinct: cnt.size };
+  }
+  function varS(a) {                                          // VAR.S (n−1)
+    const m = mean(a);
+    return sum(a.map(v => (v - m) ** 2)) / (a.length - 1);
+  }
+  const sdS = a => Math.sqrt(varS(a));                        // DESVEST.M
+  return { normCdf, normPdf, normInv, sum, mean, sorted, median, quantileInc, modeExcel, varS, sdS };
+})();
+// ==STATS-END==
+</script>
+
+<script>
+/* =====================================================================
+   2. LECTURA Y DETECCIÓN DEL FORMATO DE LOS DATOS
+   ===================================================================== */
+const P0 = 0.85;                  // tasa contractual de aciertos
+const Z95 = 1.96, Z99 = 2.576;    // valores de tabla para los IC
+let groupSize = 10;               // tamaño de lote cuando hay una fila por petición
+let DATA = null;                  // conjunto de datos detectado
+let R = null;                     // resultados de todos los cálculos
+
+/** Convierte un valor de celda a número (acepta coma decimal y "%"). */
+function toNum(v) {
+  if (v === null || v === undefined || v === '') return NaN;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  let s = String(v).trim().replace('%', '');
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
+  else s = s.replace(',', '.');
+  return s === '' ? NaN : Number(s);
+}
+/** Convierte un valor a 1 (hit) / 0 (miss) / null si no es binario. */
+function toBin(v) {
+  if (v === 0 || v === 1) return v;
+  if (v === true) return 1; if (v === false) return 0;
+  const s = String(v ?? '').trim().toLowerCase();
+  if (['1', 'hit', 'acierto', 'true', 'verdadero', 'si', 'sí', 'yes'].includes(s)) return 1;
+  if (['0', 'miss', 'fallo', 'false', 'falso', 'no'].includes(s)) return 0;
+  return null;
+}
+/** Letra de columna de Excel a partir del índice (0 → A). */
+function colLetter(i) { let s = ''; i++; while (i > 0) { const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; }
+
+/** Analiza cada columna: numérica, binaria, identificador, valores únicos. */
+function profileColumns(cols, rows) {
+  return cols.map((name, idx) => {
+    const raw = rows.map(r => r[name]);
+    const present = raw.filter(v => v !== null && v !== undefined && v !== '');
+    const nums = raw.map(toNum);
+    const nOk = nums.filter(Number.isFinite).length;
+    const bins = raw.map(toBin);
+    const bOk = bins.filter(v => v !== null).length;
+    const numeric = present.length > 0 && nOk >= 0.9 * present.length;
+    const uniq = new Set(present.map(String)).size;
+    const finite = nums.filter(Number.isFinite);
+    const max = finite.length ? Math.max(...finite) : NaN;
+    // Identificador: por nombre, o enteros consecutivos 1, 2, 3, … (no confundir con conteos crecientes)
+    const consecutive = numeric && finite.length > 2 && finite.every((v, i) => i === 0 || v === finite[i - 1] + 1);
+    const isId = /(^id$|_id$|^id_|\bid\b|^n[º°o]?\.?$|^#$|^fila$|^num)/i.test(name) || consecutive;
+    return { name, idx, letter: colLetter(idx), raw, nums, bins, numeric, binary: present.length > 0 && bOk >= 0.98 * present.length && uniq <= 2, uniq, max, isId };
+  });
+}
+
+/** Detecta el formato del archivo y construye el conjunto de datos. */
+function buildDataset(rows, cols, meta) {
+  if (!rows.length) throw new Error('La hoja no tiene filas de datos.');
+  const info = profileColumns(cols, rows);
+  const D = { ...meta, rows, cols, info, mode: null };
+  const bin = info.filter(c => c.binary && !c.isId);
+  if (bin.length) {
+    // --- Una fila por petición (hit = 1 / miss = 0) ---
+    D.mode = 'requests';
+    D.hitCol = bin.find(c => /hit|acierto|cach/i.test(c.name)) || bin[0];
+    D.seq = D.hitCol.bins.filter(v => v !== null);
+    D.groupCol = info.find(c => c !== D.hitCol && !c.isId &&
+      /min|server|servidor|nodo|pop|interval|hora|time|fecha|lote|grupo|bloque|region/i.test(c.name) &&
+      c.uniq >= 2 && c.uniq <= rows.length / 3) || null;
+  } else {
+    const reqCol = info.find(c => c.numeric && !c.isId && /petici|request|solicit|total|req/i.test(c.name) && !/hit|acierto|tasa|rate|ratio|%/i.test(c.name));
+    const hitsCol = info.find(c => c.numeric && c !== reqCol && /hit|acierto/i.test(c.name) && !/tasa|rate|ratio|%|porc/i.test(c.name) && c.max > 1);
+    if (reqCol && hitsCol) {
+      // --- Una fila por intervalo/servidor con peticiones y hits ---
+      D.mode = 'intervals'; D.reqCol = reqCol; D.hitsCol = hitsCol;
+    } else {
+      // --- Una fila por intervalo con la tasa de aciertos ---
+      const rc = info.find(c => c.numeric && !c.isId && /tasa|rate|ratio|hit|acierto|porc|%/i.test(c.name)) || info.find(c => c.numeric && !c.isId);
+      if (!rc) throw new Error('No encontré una columna numérica con hits, peticiones o tasa de aciertos.');
+      D.mode = 'rates'; D.rateCol = rc; D.scale = rc.max > 1.5 ? 100 : 1;
+    }
+  }
+  D.labelCol = info.find(c => c !== D.hitCol && c !== D.reqCol && c !== D.hitsCol && c !== D.rateCol && c !== D.groupCol) || null;
+  return D;
+}
+
+/** Conjunto de datos incrustado (Caso4.xlsx). */
+function embeddedDataset() {
+  const cols = EMBEDDED.cols;
+  const rows = EMBEDDED.rows.map(r => Object.fromEntries(cols.map((c, i) => [c, r[i]])));
+  return buildDataset(rows, cols, { file: 'Caso4.xlsx', sheet: EMBEDDED.sheet, sheets: [EMBEDDED.sheet] });
+}
+
+/* =====================================================================
+   3. CÁLCULO DE TODOS LOS RESULTADOS
+   ===================================================================== */
+function compute(D) {
+  const S = Stats;
+  const nRows = D.rows.length;
+  // ---- 3.1 Variable continua: tasa de aciertos por grupo ----
+  let groups = [];
+  if (D.mode === 'requests') {
+    const seq = D.seq;
+    if (D.groupCol) {
+      const map = new Map();
+      D.rows.forEach((r, i) => {
+        const b = D.hitCol.bins[i]; if (b === null) return;
+        const k = String(r[D.groupCol.name]);
+        if (!map.has(k)) map.set(k, { label: k, req: 0, hits: 0 });
+        const g = map.get(k); g.req++; g.hits += b;
+      });
+      groups = [...map.values()];
+    } else {
+      for (let i = 0; i < seq.length; i += groupSize) {
+        const part = seq.slice(i, i + groupSize);
+        groups.push({ label: `Lote ${groups.length + 1} (${i + 1}–${i + part.length})`, req: part.length, hits: S.sum(part) });
+      }
+    }
+    groups.forEach(g => g.rate = g.hits / g.req);
+  } else if (D.mode === 'intervals') {
+    D.rows.forEach((r, i) => {
+      const req = D.reqCol.nums[i], hits = D.hitsCol.nums[i];
+      if (Number.isFinite(req) && Number.isFinite(hits) && req > 0)
+        groups.push({ label: D.labelCol ? String(r[D.labelCol.name]) : `Fila ${i + 2}`, req, hits, rate: hits / req });
+    });
+  } else {
+    D.rows.forEach((r, i) => {
+      const v = D.rateCol.nums[i];
+      if (Number.isFinite(v)) groups.push({ label: D.labelCol ? String(r[D.labelCol.name]) : `Fila ${i + 2}`, rate: v / D.scale });
+    });
+  }
+  const x = groups.map(g => g.rate), m = x.length;
+  if (m < 2) throw new Error('Se necesitan al menos 2 grupos/intervalos para los cálculos.');
+
+  // ---- 3.2 Medidas de tendencia central y dispersión ----
+  const mean = S.mean(x), sd = S.sdS(x), mn = Math.min(...x), mx = Math.max(...x);
+  const mode = S.modeExcel(x);
+  const desc = {
+    m, mean, median: S.median(x), mode, min: mn, max: mx, range: mx - mn,
+    var: S.varS(x), sd, cv: sd / mean,
+    q1: S.quantileInc(x, .25), q2: S.quantileInc(x, .5), q3: S.quantileInc(x, .75),
+    sum: S.sum(x)
+  };
+  desc.iqr = desc.q3 - desc.q1;
+
+  // ---- 3.3 Tabla de frecuencias (regla de Sturges) ----
+  const kRaw = 1 + 3.322 * Math.log10(m);
+  let k = Math.max(1, Math.min(30, Math.ceil(kRaw)));
+  let w = desc.range / k;
+  if (desc.range === 0) { k = 1; w = 1; }
+  const classes = Array.from({ length: k }, (_, j) => ({ li: mn + j * w, ls: mn + (j + 1) * w, f: 0 }));
+  if (desc.range === 0) { classes[0].li = mn - .005; classes[0].ls = mn + .005; }
+  x.forEach(v => { const j = desc.range === 0 ? 0 : Math.min(k - 1, Math.floor((v - mn) / w + 1e-9)); classes[j].f++; });
+  let F = 0;
+  classes.forEach(c => { c.mark = (c.li + c.ls) / 2; c.fr = c.f / m; F += c.f; c.F = F; c.Fr = F / m; });
+  const modal = classes.reduce((b, c) => c.f > b.f ? c : b, classes[0]);
+  const hist = { kRaw, k, w: desc.range === 0 ? 0 : w, classes, modal };
+
+  // ---- 3.4 Normalidad ----
+  const emp = [1, 2, 3].map(kk => {
+    const lo = mean - kk * sd, hi = mean + kk * sd;
+    const c = x.filter(v => v >= lo - 1e-12 && v <= hi + 1e-12).length;
+    // Tolerancia aceptada frente al valor teórico: 10, 5 y 3 puntos porcentuales
+    const expected = [0.683, 0.954, 0.997][kk - 1], tol = [0.10, 0.05, 0.03][kk - 1];
+    return { k: kk, lo, hi, count: c, pct: c / m, expected, tol, ok: Math.abs(c / m - expected) <= tol };
+  });
+  const empOk = emp.every(e => e.ok);
+  // Simetría (propiedad de la normal): media, mediana y moda deben casi coincidir.
+  // Se acepta una diferencia de hasta un cuarto de desviación estándar.
+  const center = mode.value !== null ? mode.value : modal.mark;    // moda o marca de la clase modal
+  const symTol = 0.25 * sd;
+  const sym = { median: desc.median, mode: center, modeIsClass: mode.value === null, tol: symTol,
+    dMedian: Math.abs(mean - desc.median), dMode: Math.abs(mean - center) };
+  sym.ok = sym.dMedian <= symTol && sym.dMode <= symTol;
+  const isNormal = sym.ok && empOk;
+  const norm = { emp, empOk, sym, isNormal, distinct: mode.distinct };
+
+  // ---- 3.5 Proporción muestral ----
+  let prop, propAlt = null;
+  if (D.mode === 'requests') {
+    const n = D.seq.length, hits = S.sum(D.seq);
+    prop = { n, hits, phat: hits / n, label: 'n = número de peticiones' };
+  } else if (D.mode === 'intervals') {
+    const n = S.sum(groups.map(g => g.req)), hits = S.sum(groups.map(g => g.hits));
+    prop = { n, hits, phat: hits / n, label: 'n = Σ peticiones' };
+    propAlt = { n: m, hits: null, phat: hits / n, label: 'n = número de intervalos' };
+  } else {
+    prop = { n: m, hits: null, phat: mean, label: 'n = número de intervalos (solo hay tasas)' };
+  }
+  const testFor = pr => {
+    const se0 = Math.sqrt(P0 * (1 - P0) / pr.n);
+    const z = (pr.phat - P0) / se0;
+    const pval = S.normCdf(z);
+    return { se0, z, pval, reject05: pval < 0.05, reject01: pval < 0.01, np0: pr.n * P0, nq0: pr.n * (1 - P0) };
+  };
+  const test = testFor(prop);
+  test.zc05 = S.normInv(0.05); test.zc01 = S.normInv(0.01);
+  test.condOk = test.np0 >= 5 && test.nq0 >= 5;
+  const testAlt = propAlt ? testFor(propAlt) : null;
+
+  // ---- 3.6 Intervalos de confianza ----
+  const seMean = sd / Math.sqrt(m);
+  const seProp = Math.sqrt(prop.phat * (1 - prop.phat) / prop.n);
+  const ci = {
+    seMean, seProp,
+    mean: [Z95, Z99].map(z => ({ z, me: z * seMean, lo: mean - z * seMean, hi: mean + z * seMean })),
+    prop: [Z95, Z99].map(z => ({ z, me: z * seProp, lo: prop.phat - z * seProp, hi: prop.phat + z * seProp }))
+  };
+  if (propAlt) {
+    const se = Math.sqrt(propAlt.phat * (1 - propAlt.phat) / propAlt.n);
+    ci.propAlt = [Z95, Z99].map(z => ({ z, me: z * se, lo: propAlt.phat - z * se, hi: propAlt.phat + z * se }));
+  }
+
+  // ---- 3.7 Binomial: X = número de hits ~ B(n, p0) ----
+  let binom = null;
+  if (prop.hits !== null && Number.isInteger(prop.hits)) {
+    const mu = prop.n * P0, sigma = Math.sqrt(prop.n * P0 * (1 - P0));
+    binom = { mu, sigma, x: prop.hits, z: (prop.hits - mu) / sigma };
+  }
+
+  // ---- 3.8 Periodicidad (patrón sospechoso en los misses) ----
+  let periodic = null;
+  if (D.mode === 'requests') {
+    const zeros = []; D.seq.forEach((v, i) => { if (v === 0) zeros.push(i + 1); });
+    const gaps = zeros.slice(1).map((v, i) => v - zeros[i]);
+    if (zeros.length >= 5 && gaps.every(g => g === gaps[0])) periodic = { gap: gaps[0], first: zeros[0], last: zeros[zeros.length - 1], count: zeros.length };
+  }
+
+  // ---- 3.9 Referencias de Excel para verificar cada cálculo ----
+  const E = excelRefs(D, m, nRows);
+  return { D, groups, x, desc, hist, norm, prop, propAlt, test, testAlt, ci, binom, periodic, E };
+}
+
+/** Construye las fórmulas de Excel (en español, separador ";" y coma decimal)
+ *  equivalentes a cada cálculo, con los rangos reales del archivo. */
+function excelRefs(D, m, nRows) {
+  const last = nRows + 1, E = {};
+  const aux = colLetter(D.cols.length + 1);         // columna auxiliar (deja una vacía)
+  const aux2 = colLetter(D.cols.length + 2);
+  if (D.mode === 'requests') {
+    const c = D.hitCol.letter, rg = `${c}2:${c}${last}`;
+    E.bin = rg; E.nExpr = `CONTAR(${rg})`; E.hitsExpr = `SUMA(${rg})`; E.phatExpr = `PROMEDIO(${rg})`;
+    if (D.groupCol) {
+      const g = D.groupCol.letter;
+      E.rate = `${aux2}2:${aux2}${m + 1}`;
+      E.howRate = `En ${aux}2 lista los grupos (=UNICOS(${g}2:${g}${last})) y en ${aux2}2 escribe =PROMEDIO.SI($${g}$2:$${g}$${last};${aux}2;$${c}$2:$${c}$${last}); arrástrala hasta ${aux2}${m + 1}.`;
+    } else {
+      E.rate = `${aux}2:${aux}${m + 1}`;
+      E.howRate = `En ${aux}2 escribe =PROMEDIO(DESREF($${c}$2;(FILA()-2)*${groupSize};0;${groupSize};1)) y arrástrala hasta ${aux}${m + 1}. Cada celda es la tasa de un lote de ${groupSize} peticiones.`;
+    }
+  } else if (D.mode === 'intervals') {
+    const rq = `${D.reqCol.letter}2:${D.reqCol.letter}${last}`, ht = `${D.hitsCol.letter}2:${D.hitsCol.letter}${last}`;
+    E.nExpr = `SUMA(${rq})`; E.hitsExpr = `SUMA(${ht})`; E.phatExpr = `SUMA(${ht})/SUMA(${rq})`;
+    E.rate = `${aux}2:${aux}${last}`;
+    E.howRate = `En ${aux}2 escribe =${D.hitsCol.letter}2/${D.reqCol.letter}2 y arrástrala hasta ${aux}${last} (tasa de cada intervalo).`;
+  } else {
+    const c = D.rateCol.letter;
+    E.rate = `${c}2:${c}${last}`; E.nExpr = `CONTAR(${E.rate})`; E.phatExpr = `PROMEDIO(${E.rate})` + (D.scale === 100 ? '/100' : '');
+    E.howRate = D.scale === 100 ? `La columna ${c} está en porcentaje: divide entre 100 (por ejemplo en una columna auxiliar =${c}2/100).` : `La tasa ya está en la columna ${c}.`;
+  }
+  return E;
+}
+
+/* =====================================================================
+   4. UTILIDADES DE PRESENTACIÓN
+   ===================================================================== */
+const T = String.raw;                                         // para escribir LaTeX sin escapar
+const $ = (s, el = document) => el.querySelector(s);
+const fmt = (v, d = 4) => Number.isFinite(v) ? v.toFixed(d) : '—';
+const pct = (v, d = 1) => Number.isFinite(v) ? (v * 100).toFixed(d) + ' %' : '—';
+const xl = (v, d = 4) => Number.isFinite(v) ? v.toFixed(d).replace('.', ',') : '';   // número con coma decimal para Excel
+const int = v => Number(v).toLocaleString('es-CO');
+/** Valor p legible: decimal y, si es muy pequeño, notación científica. */
+const fmtP = p => !Number.isFinite(p) ? '—' : p < 0.0001 ? `${p.toExponential(2).replace('e-', ' × 10⁻').replace(/⁻(\d+)/, (_, e) => '⁻' + [...e].map(c => '⁰¹²³⁴⁵⁶⁷⁸⁹'[c]).join(''))}` : p.toFixed(4);
+const texP = p => p < 0.0001 ? (() => { const [mnt, ex] = p.toExponential(2).split('e'); return `${mnt}\\times10^{${+ex}}`; })() : p.toFixed(4);
+function tex(s, display = false) {
+  try { return katex.renderToString(s, { displayMode: display, throwOnError: false }); }
+  catch (e) { return `<code>${s}</code>`; }
+}
+/** Panel "¿Cómo se hizo?": cada paso muestra fórmula, valores sustituidos,
+ *  resultado y la fórmula de Excel equivalente. */
+function how(steps, open = false, title = '¿Cómo se hizo?') {
+  return `<details class="how"${open ? ' open' : ''}><summary>${title}</summary><div class="how-body">
+    <div class="muted small">Fórmulas de Excel en español con separador <code>;</code> y coma decimal. Si tu Excel está en inglés usa <code>,</code> como separador y punto decimal.</div>
+    ${steps.map(s => `<div class="hstep">
+      ${s.t ? `<div class="t">${s.t}</div>` : ''}
+      ${s.f ? `<div class="f">${tex(s.f, true)}</div>` : ''}
+      ${s.s ? `<div class="f">${tex(s.s, true)}</div>` : ''}
+      ${s.r ? `<div class="r">${s.r}</div>` : ''}
+      ${s.note ? `<div class="muted small">${s.note}</div>` : ''}
+      ${s.xl ? xlChip(s.xl) : ''}
+    </div>`).join('')}
+  </div></details>`;
+}
+function xlChip(f) {
+  const esc = f.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  return `<div class="xl"><b>EXCEL</b><span>${esc}</span><button data-copy="${esc}">copiar</button></div>`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-copy]');
+  if (b) { navigator.clipboard?.writeText(b.dataset.copy)?.catch(() => {}); b.textContent = '✓'; setTimeout(() => b.textContent = 'copiar', 1200); }
+});
+function toast(msg, err = false) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast on' + (err ? ' err' : '');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.className = 'toast', 3800);
+}
+
+/* ---- Registro de recursos de cada escena (se liberan al cambiar) ---- */
+const Life = {
+  items: [],
+  timeout(fn, ms) { const id = setTimeout(fn, ms); this.items.push(() => clearTimeout(id)); return id; },
+  interval(fn, ms) { const id = setInterval(fn, ms); this.items.push(() => clearInterval(id)); return id; },
+  raf(fn) { let id, alive = true; const loop = t => { if (!alive) return; fn(t); id = requestAnimationFrame(loop); }; id = requestAnimationFrame(loop); this.items.push(() => { alive = false; cancelAnimationFrame(id); }); },
+  chart(c) { this.items.push(() => c.destroy()); return c; },
+  on(el, ev, fn) { el.addEventListener(ev, fn); this.items.push(() => el.removeEventListener(ev, fn)); },
+  clear() { this.items.forEach(f => f()); this.items = []; }
+};
+/** Animación de 0→1 con easing durante ms milisegundos. */
+function tween(ms, fn, delay = 0) {
+  const start = performance.now() + delay;
+  Life.raf(t => {
+    const k = Math.min(1, Math.max(0, (t - start) / ms));
+    fn(1 - Math.pow(1 - k, 3));
+  });
+}
+/* Tema de Chart.js */
+function chartTheme() {
+  Chart.defaults.color = '#c9d2de';
+  Chart.defaults.borderColor = 'rgba(255,255,255,.07)';
+  Chart.defaults.font.family = 'Inter, sans-serif';
+  Chart.defaults.font.size = 14;
+}
+
+/** Curva normal estándar en SVG con región de rechazo y área del valor p. */
+function normalCurveSVG({ z, alphas = [0.05, 0.01], W = 680, H = 300, showP = true, mainAlpha = 0.05 }) {
+  const x0 = -4.5, x1 = 4.5, pad = { l: 16, r: 16, t: 26, b: 48 };
+  const sx = v => pad.l + (v - x0) / (x1 - x0) * (W - pad.l - pad.r);
+  const sy = v => H - pad.b - v / 0.42 * (H - pad.t - pad.b);
+  const area = (a, b) => {
+    a = Math.max(a, x0); b = Math.min(b, x1); if (b <= a) return '';
+    let d = `M${sx(a)},${sy(0)}`;
+    for (let v = a; v <= b + 1e-9; v += 0.03) d += `L${sx(v)},${sy(Stats.normPdf(v))}`;
+    return d + `L${sx(b)},${sy(Stats.normPdf(b))}L${sx(b)},${sy(0)}Z`;
+  };
+  let curve = ''; for (let v = x0; v <= x1 + 1e-9; v += 0.03) curve += (curve ? 'L' : 'M') + `${sx(v)},${sy(Stats.normPdf(v))}`;
+  const colors = { 0.05: '#ff7a1a', 0.01: '#ff3d4a' };
+  let g = '';
+  // Regiones de rechazo
+  alphas.forEach(a => {
+    const zc = Stats.normInv(a), col = colors[a] || (a === mainAlpha ? '#ff7a1a' : '#ff3d4a');
+    g += `<path d="${area(x0, zc)}" fill="${col}" opacity="${a === mainAlpha ? .35 : .25}"/>`;
+  });
+  // Área del valor p
+  if (showP && Number.isFinite(z)) g += `<path d="${area(x0, z)}" fill="url(#hatch)" />`;
+  g += `<path d="${curve}" fill="none" stroke="#e8edf4" stroke-width="2.5"/>`;
+  g += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${sy(0)}" y2="${sy(0)}" stroke="#334058"/>`;
+  for (let t = -4; t <= 4; t++) g += `<line x1="${sx(t)}" x2="${sx(t)}" y1="${sy(0)}" y2="${sy(0) + 6}" stroke="#647086"/><text x="${sx(t)}" y="${sy(0) + 22}" fill="#93a0b4" font-size="14" text-anchor="middle">${t}</text>`;
+  g += `<text x="${W - pad.r}" y="${H - 6}" fill="#647086" font-size="13" text-anchor="end">z</text>`;
+  // Valores críticos
+  alphas.forEach((a, i) => {
+    // Etiquetas a la izquierda de la línea (cola izquierda); la de α mayor va arriba
+    // para que ninguna línea punteada cruce el texto de la otra.
+    const zc = Stats.normInv(a), col = colors[a] || '#ff7a1a', y = pad.t + 4 + i * 40;
+    g += `<line x1="${sx(zc)}" x2="${sx(zc)}" y1="${sy(0)}" y2="${y - 10}" stroke="${col}" stroke-dasharray="5 4" stroke-width="2"/>
+          <text x="${sx(zc) - 6}" y="${y + 4}" fill="${col}" font-size="14" font-weight="700" text-anchor="end">α = ${a} → z꜀ = ${zc.toFixed(3)}</text>`;
+  });
+  // Estadístico observado
+  if (Number.isFinite(z)) {
+    const zc = Math.max(x0 + 0.05, Math.min(x1 - 0.05, z)), off = z < x0 || z > x1;
+    const lx = sx(zc), ly = sy(Stats.normPdf(zc));
+    const anchor = zc < -2 ? 'start' : zc > 2 ? 'end' : 'middle';
+    g += `<line x1="${lx}" x2="${lx}" y1="${sy(0)}" y2="${Math.min(ly, sy(0) - 70)}" stroke="#59c4ff" stroke-width="3"/>
+          <circle cx="${lx}" cy="${sy(0)}" r="7" fill="#59c4ff"/>
+          <text x="${lx + (anchor === 'start' ? 8 : anchor === 'end' ? -8 : 0)}" y="${Math.min(ly, sy(0) - 70) - 8}" fill="#59c4ff" font-size="16" font-weight="800" text-anchor="${anchor}">${off ? (z < 0 ? '◄ ' : '') : ''}z = ${z.toFixed(4)}${off && z > 0 ? ' ►' : ''}</text>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Curva normal estándar">
+    <defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#59c4ff" stroke-width="2.4"/></pattern></defs>${g}</svg>`;
+}
+</script>
+
+<script>
+/* =====================================================================
+   5. ESCENAS
+   Cada escena: { title, render(el) }. render() construye el HTML y
+   arranca las animaciones (registradas en Life para liberarlas).
+   ===================================================================== */
+const SCENES = [];
+
+/* ---------------- Escena 1 · Portada y el caso ---------------- */
+SCENES.push({
+  title: 'El caso',
+  render(el) {
+    const { prop, test } = R;
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Caso 4 · Postmortem de incidente</div>
+      <h1>Colapso de Fastly: ¿se sostuvo el 85 % de aciertos en caché?</h1>
+      <p class="lead">Un fallo en la CDN de Fastly dejó fuera de línea cerca del 10 % de Internet durante una hora. Al volver el servicio, The New York Times y Reddit acusaron a Fastly: si la tasa de aciertos en caché cae por debajo del 85 % del contrato, las peticiones atraviesan la CDN, golpean los servidores origen y tumban sus bases de datos.</p>
+      <div class="grid2">
+        <div class="stack">
+          <div class="alert-banner"><span class="pulse">●</span> ALERTA · HIT RATE &lt; 85 % · ORIGIN DB SATURADA</div>
+          <div class="card" style="padding:10px"><div class="canvas-wrap"><canvas id="cdn" height="380"></canvas></div>
+            <div class="muted small" style="padding:6px 6px 0">Cada partícula es una petición real del archivo (en orden de <code>Request_ID</code>). <span class="ok">Verde</span>: hit, la CDN responde desde caché. <span class="bad">Rojo</span>: miss, la petición viaja hasta el origen y aumenta su carga.</div>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="tiles">
+            <div class="tile"><div class="l">Peticiones</div><div class="v" id="cReq">0</div></div>
+            <div class="tile"><div class="l">Hits</div><div class="v ok" id="cHit">0</div></div>
+            <div class="tile"><div class="l">Misses</div><div class="v bad" id="cMiss">0</div></div>
+            <div class="tile"><div class="l">Tasa en vivo</div><div class="v" id="cRate">—</div><div class="x">contrato: 85.0 %</div></div>
+          </div>
+          <div class="card">
+            <h3><span class="tag">JUICIO</span> Las dos hipótesis</h3>
+            <div class="hyp">
+              <span class="h ok">${tex(T`H_0: p \ge 0.85`)}</span><span>A favor de <b>Fastly</b>: el 85 % se sostuvo y los periódicos colapsaron por la mala configuración de sus propios balanceadores.</span>
+              <span class="h bad">${tex(T`H_1: p < 0.85`)}</span><span>A favor de <b>NYT/Reddit</b>: la caché falló. Si se rechaza H₀, Fastly paga los costos.</span>
+            </div>
+            <p class="muted small" style="margin:.8em 0 0">Prueba de proporción unilateral a la izquierda · α = 0.05 (principal) y α = 0.01 (comparación).</p>
+          </div>
+          <div class="card meaning">
+            <h3>¿Qué significa?</h3>
+            <p>La <b>tasa de aciertos</b> es la fracción de peticiones que la CDN responde sin molestar al origen. Con 85 %, solo 15 de cada 100 llegan al servidor del periódico. Si la tasa baja, esa carga se multiplica y la base de datos colapsa. La estadística decidirá quién tiene la razón.</p>
+          </div>
+          ${how([
+            { t: 'Tasa de aciertos (proporción muestral)', f: T`\hat p=\frac{\text{hits}}{\text{peticiones}}`, s: T`\hat p=\frac{${prop.hits ?? '\\text{—}'}}{${prop.n}}=${fmt(prop.phat)}`, r: `p̂ = ${fmt(prop.phat)} (${pct(prop.phat)}) frente al contrato de 85 %`, xl: '=' + R.E.phatExpr },
+            { t: 'Carga sobre el origen', f: T`\text{misses}=1-\hat p`, s: T`1-${fmt(prop.phat)}=${fmt(1 - prop.phat)}\;\text{vs}\;0.15`, r: `Al origen llega ${pct((1 - prop.phat) / (1 - P0) - 1, 0)} más tráfico que lo pactado`, note: 'Comparación: (1 − p̂)/(1 − 0.85) − 1.' }
+          ])}
+        </div>
+      </div>
+    </section>`;
+    cdnAnimation($('#cdn'));
+  }
+});
+
+/** Animación de la CDN conducida por la secuencia real de hits/misses. */
+function cdnAnimation(canvas) {
+  const ctx = canvas.getContext('2d');
+  const seq = R.D.mode === 'requests' ? R.D.seq : (() => { let s = 7; return Array.from({ length: 400 }, () => { s = (s * 9301 + 49297) % 233280; return s / 233280 < R.prop.phat ? 1 : 0; }); })();
+  let W, H, dpr;
+  const resize = () => { dpr = window.devicePixelRatio || 1; W = canvas.clientWidth; H = 380; canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+  resize(); Life.on(window, 'resize', resize);
+  const parts = []; let idx = 0, req = 0, hits = 0, load = 0, last = 0, hist = [];
+  const users = [0.18, 0.34, 0.5, 0.66, 0.82];
+  const pos = () => ({ ux: W * 0.08, ex: W * 0.46, ox: W * 0.86 });
+  Life.raf(t => {
+    const { ux, ex, ox } = pos();
+    if (t - last > 95) {                      // nueva petición
+      last = t;
+      const y = users[Math.floor(Math.random() * users.length)] * (H - 90);
+      parts.push({ x: ux, y, ty: (H - 90) * 0.5, v: seq[idx % seq.length], phase: 0 });
+      idx++;
+    }
+    ctx.clearRect(0, 0, W, H);
+    // Enlaces
+    ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+    users.forEach(u => { ctx.beginPath(); ctx.moveTo(ux, u * (H - 90)); ctx.lineTo(ex, (H - 90) / 2); ctx.stroke(); });
+    ctx.beginPath(); ctx.moveTo(ex, (H - 90) / 2); ctx.lineTo(ox, (H - 90) / 2); ctx.stroke();
+    // Usuarios
+    users.forEach(u => { ctx.fillStyle = '#334058'; ctx.beginPath(); ctx.arc(ux, u * (H - 90), 9, 0, 7); ctx.fill(); });
+    ctx.fillStyle = '#93a0b4'; ctx.font = '600 13px Inter'; ctx.textAlign = 'center';
+    ctx.fillText('Lectores', ux, H - 74);
+    // Nodo CDN
+    const cy = (H - 90) / 2;
+    ctx.fillStyle = '#1a2232'; ctx.strokeStyle = '#ff7a1a'; ctx.lineWidth = 2;
+    roundRect(ctx, ex - 52, cy - 46, 104, 92, 12); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff7a1a'; ctx.font = '800 14px Inter'; ctx.fillText('FASTLY', ex, cy - 8);
+    ctx.fillStyle = '#93a0b4'; ctx.font = '500 12px Inter'; ctx.fillText('POP · caché', ex, cy + 12);
+    // Servidor origen (tiembla con la carga)
+    // Decaimiento proporcional: con 15 % de misses la carga se estabiliza ~0.5;
+    // con más misses supera 0.55 y el origen entra en zona roja.
+    load *= 0.992;
+    const shake = load > .55 ? (Math.random() - .5) * 6 * load : 0;
+    const hot = Math.min(1, load);
+    ctx.fillStyle = `rgb(${26 + 200 * hot},${34 - 10 * hot},${50 - 20 * hot})`;
+    ctx.strokeStyle = hot > .55 ? '#ff3d4a' : '#334058';
+    roundRect(ctx, ox - 46 + shake, cy - 56, 92, 112, 10); ctx.fill(); ctx.stroke();
+    for (let i = 0; i < 3; i++) { ctx.fillStyle = 'rgba(0,0,0,.35)'; roundRect(ctx, ox - 36 + shake, cy - 44 + i * 30, 72, 20, 4); ctx.fill(); ctx.fillStyle = hot > .55 && Math.random() > .5 ? '#ff3d4a' : '#2fe0a0'; ctx.beginPath(); ctx.arc(ox + 26 + shake, cy - 34 + i * 30, 3, 0, 7); ctx.fill(); }
+    ctx.fillStyle = '#e8edf4'; ctx.font = '700 13px Inter'; ctx.fillText('Origen NYT/Reddit', ox, cy + 76);
+    if (hot > .7) { ctx.fillStyle = '#ff3d4a'; ctx.font = '800 16px JetBrains Mono'; ctx.fillText('503 · DB DOWN', ox, cy - 66); }
+    // Barra de carga del origen
+    ctx.fillStyle = '#1a2232'; roundRect(ctx, ox - 46, cy + 86, 92, 8, 4); ctx.fill();
+    ctx.fillStyle = hot > .55 ? '#ff3d4a' : '#ffc247'; roundRect(ctx, ox - 46, cy + 86, 92 * hot, 8, 4); ctx.fill();
+    // Partículas
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      if (p.phase === 0) {            // usuario → CDN
+        p.x += (ex - ux) / 38; p.y += (p.ty - p.y) * 0.08;
+        if (p.x >= ex - 4) {
+          req++; if (p.v) hits++; p.phase = p.v ? 2 : 1;
+          hist.push(hits / req); if (hist.length > 220) hist.shift();
+        }
+      } else if (p.phase === 1) {     // miss: CDN → origen
+        p.x += (ox - ex) / 30;
+        if (p.x >= ox - 40) { load = Math.min(1.2, load + 0.15); p.phase = 3; }
+      } else {                         // regreso al usuario
+        p.x -= (p.phase === 2 ? (ex - ux) / 26 : (ox - ux) / 50);
+        if (p.x < ux) { parts.splice(i, 1); continue; }
+      }
+      ctx.fillStyle = p.v ? '#2fe0a0' : (p.phase === 3 ? '#ffc247' : '#ff3d4a');
+      ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.v ? 4 : 5, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    }
+    // Gráfico de la tasa acumulada con la línea de 85 %
+    const gx = 16, gy = H - 58, gw = W - 32, gh = 48;
+    ctx.fillStyle = 'rgba(255,255,255,.03)'; ctx.fillRect(gx, gy, gw, gh);
+    const ys = v => gy + gh - (v - 0.5) / 0.5 * gh;
+    ctx.strokeStyle = '#ff7a1a'; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(gx, ys(.85)); ctx.lineTo(gx + gw, ys(.85)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#ff7a1a'; ctx.font = '600 11px JetBrains Mono'; ctx.textAlign = 'left'; ctx.fillText('85 % contrato', gx + 4, ys(.85) - 4);
+    ctx.strokeStyle = '#59c4ff'; ctx.lineWidth = 2; ctx.beginPath();
+    hist.forEach((v, i) => { const X = gx + i / 220 * gw, Y = ys(Math.max(.5, v)); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); ctx.stroke();
+    ctx.textAlign = 'center';
+    // Contadores
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    set('cReq', int(req)); set('cHit', int(hits)); set('cMiss', int(req - hits));
+    const rEl = document.getElementById('cRate');
+    if (rEl && req) { rEl.textContent = pct(hits / req); rEl.className = 'v ' + (hits / req < P0 ? 'bad' : 'ok'); }
+  });
+}
+function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+/* ---------------- Escena 2 · Muestreo ---------------- */
+SCENES.push({
+  title: 'Muestreo',
+  render(el) {
+    const { D, prop, desc, periodic, binom } = R;
+    const isReq = D.mode === 'requests';
+    const cols = 60, rows = 26, total = cols * rows;
+    const nShow = Math.min(isReq ? D.seq.length : R.groups.length, 360);
+    const start = Math.floor((total - nShow) / 2 / cols) * cols;    // bloque consecutivo en el tiempo
+    let dots = '';
+    for (let i = 0; i < total; i++) {
+      const cx = 10 + (i % cols) * 14, cy = 10 + Math.floor(i / cols) * 14;
+      const inS = i >= start && i < start + nShow, j = i - start;
+      const val = inS ? (isReq ? D.seq[j] : (R.groups[j].rate >= P0 ? 1 : 0)) : null;
+      dots += inS
+        ? `<circle cx="${cx}" cy="${cy}" r="4.6" class="rv" style="--d:${(0.6 + j * 0.008).toFixed(3)}s" fill="${val ? '#2fe0a0' : '#ff3d4a'}"/>`
+        : `<circle cx="${cx}" cy="${cy}" r="3" fill="#252e40"/>`;
+    }
+    const tipo = D.mode === 'requests'
+      ? (D.groupCol ? `peticiones agrupadas por <b>${D.groupCol.name}</b> (muestreo por conglomerados)` : `<b>${int(prop.n)} peticiones consecutivas</b>${D.labelCol && D.labelCol.isId ? ` (${D.labelCol.name} ${D.labelCol.raw[0]} a ${D.labelCol.raw[D.labelCol.raw.length - 1]})` : ''}`)
+      : `<b>${R.groups.length} intervalos/servidores</b>`;
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Escena 2 · Población, muestra y estimadores</div>
+      <h1>No podemos revisar millones de peticiones: tomamos una muestra</h1>
+      <p class="lead">La <b>población</b> son todas las peticiones que los POP de Fastly sirvieron a NYT y Reddit tras restablecer el servicio (millones por minuto). La <b>muestra</b> es lo que trae el archivo: ${tipo}. Con ella <b>estimamos</b> la tasa real <i>p</i> de la población.</p>
+      <div class="grid2">
+        <div class="stack">
+          <div class="card">
+            <h3><span class="tag">POBLACIÓN</span> cada punto gris representa miles de peticiones</h3>
+            <svg viewBox="0 0 ${cols * 14 + 6} ${rows * 14 + 6}" width="100%">${dots}</svg>
+            <div class="muted small">Bloque resaltado = la muestra, en el orden en que llegó: <span class="ok">● hit</span> <span class="bad">● miss</span>${isReq ? '' : ' (verde: intervalo con tasa ≥ 85 %)'}.${nShow < (isReq ? D.seq.length : R.groups.length) ? ` Se dibujan las primeras ${nShow}.` : ''}</div>
+          </div>
+          <div class="card">
+            <h3><span class="tag">TIPOS DE MUESTREO</span> ¿cuál aplica?</h3>
+            <table class="small">
+              <thead><tr><th>Tipo</th><th style="text-align:left">Cómo sería en este caso</th><th>¿Aplica?</th></tr></thead>
+              <tbody>
+                <tr><td>Aleatorio simple</td><td style="text-align:left;white-space:normal">Elegir peticiones al azar de los logs de toda la hora</td><td class="am">ideal</td></tr>
+                <tr><td>Sistemático</td><td style="text-align:left;white-space:normal">Tomar una de cada <i>k</i> peticiones del log, o un bloque consecutivo</td><td class="hl"><b>✔ el de los datos</b></td></tr>
+                <tr><td>Estratificado</td><td style="text-align:left;white-space:normal">Muestrear por POP/región o por medio (NYT, Reddit)</td><td class="muted">recomendado</td></tr>
+                <tr><td>Por conglomerados</td><td style="text-align:left;white-space:normal">Tomar minutos o servidores completos (los <i>lotes</i> de la escena 3)</td><td class="muted">para la tasa por lote</td></tr>
+              </tbody>
+            </table>
+            <p class="small muted" style="margin:.6em 0 0">Los registros vienen en un bloque continuo de Request_ID: es un <b>muestreo sistemático en el tiempo</b> (por conveniencia, lo que capturó el log). Para la tasa por lote se forman <b>conglomerados</b> de peticiones consecutivas.</p>
+          </div>
+        </div>
+        <div class="stack">
+          ${periodic ? `<div class="card warn"><h3>⚠ Patrón detectado en la muestra</h3><p class="small" style="margin:0">Los ${periodic.count} misses aparecen <b>exactamente cada ${periodic.gap} peticiones</b> (posiciones ${periodic.first}, ${periodic.first + periodic.gap}, ${periodic.first + 2 * periodic.gap}, …, ${periodic.last}). Una muestra aleatoria real no se ve así. Es el riesgo clásico del muestreo sistemático: si el periodo de la muestra coincide con un ciclo de los datos, la muestra puede no representar a la población. Lo tendremos en cuenta en la escena de normalidad.</p></div>` : ''}
+          <div class="card">
+            <h3><span class="tag">ESTIMADORES PUNTUALES</span></h3>
+            <table>
+              <thead><tr><th>Parámetro (población)</th><th>Estimador (muestra)</th><th>Valor</th></tr></thead>
+              <tbody>
+                <tr><td>${tex('p')} proporción real de hits</td><td>${tex(T`\bar p=\hat p`)}</td><td class="mono">${fmt(prop.phat)}</td></tr>
+                <tr><td>${tex(T`\mu`)} tasa media por lote</td><td>${tex(T`\bar x`)}</td><td class="mono">${fmt(desc.mean)}</td></tr>
+                <tr><td>${tex(T`\sigma`)} desviación de la tasa</td><td>${tex('s')}</td><td class="mono">${fmt(desc.sd)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h3><span class="tag">VARIABLE ALEATORIA</span> de Bernoulli a binomial</h3>
+            <p class="small" style="margin:0 0 .4em">Cada petición es una variable ${tex(T`X_i`)} que vale 1 (hit) o 0 (miss). El número total de hits en <i>n</i> peticiones independientes sigue una distribución <b>binomial</b>:</p>
+            ${tex(T`X=\sum_{i=1}^{n}X_i \sim B(n,p),\qquad P(X=x)=\binom{n}{x}p^{x}(1-p)^{n-x}`, true)}
+            ${binom ? `<p class="small" style="margin:.2em 0 0">Si Fastly cumple (p = 0.85): ${tex(T`\mu=np_0=${fmt(binom.mu, 1)}`)}, ${tex(T`\sigma=\sqrt{np_0(1-p_0)}=${fmt(binom.sigma, 3)}`)}. Observamos <b>${int(binom.x)}</b> hits.</p>` : ''}
+          </div>
+          <div class="card meaning"><h3>¿Qué significa?</h3><p>No conocemos la tasa real <i>p</i> de toda la hora, pero la muestra la estima con <b>p̄ = ${fmt(prop.phat)}</b>. La pregunta de las siguientes escenas es si esa diferencia con 0.85 puede deberse al azar del muestreo o si es una caída real.</p></div>
+          ${how([
+            { t: 'Proporción muestral', f: T`\bar p=\frac{x}{n}`, s: prop.hits !== null ? T`\bar p=\frac{${prop.hits}}{${prop.n}}` : '', r: `p̄ = ${fmt(prop.phat)}`, xl: '=' + R.E.phatExpr },
+            { t: 'Media muestral de la tasa', f: T`\bar x=\frac{\sum x_i}{n}`, s: T`\bar x=\frac{${fmt(desc.sum)}}{${desc.m}}`, r: `x̄ = ${fmt(desc.mean)}`, xl: `=PROMEDIO(${R.E.rate})`, note: R.E.howRate },
+            { t: 'Desviación estándar muestral', f: T`s=\sqrt{\frac{\sum (x_i-\bar x)^2}{n-1}}`, r: `s = ${fmt(desc.sd, 5)}`, xl: `=DESVEST.M(${R.E.rate})` },
+            ...(binom ? [{ t: 'Media y desviación de la binomial bajo H₀', f: T`\mu=np_0,\quad \sigma=\sqrt{np_0(1-p_0)}`, s: T`\mu=${prop.n}(0.85)=${fmt(binom.mu, 2)},\quad\sigma=\sqrt{${prop.n}(0.85)(0.15)}=${fmt(binom.sigma, 4)}`, r: `μ = ${fmt(binom.mu, 2)}, σ = ${fmt(binom.sigma, 4)}`, xl: `=${prop.n}*0,85  ·  =RAIZ(${prop.n}*0,85*0,15)` }] : [])
+          ])}
+        </div>
+      </div>
+    </section>`;
+  }
+});
+
+/* ---------------- Escena 3 · Conjunto de datos ---------------- */
+SCENES.push({
+  title: 'Datos',
+  render(el) {
+    const { D, prop, groups, E } = R;
+    const modeTxt = { requests: 'Una fila por petición (hit = 1 / miss = 0)', intervals: 'Una fila por intervalo/servidor (peticiones y hits)', rates: 'Una fila por intervalo con la tasa de aciertos' }[D.mode];
+    const idCol = D.info.find(c => c.isId && c.numeric);
+    const periodo = idCol ? `${D.cols[idCol.idx]} ${idCol.nums[0]} → ${idCol.nums[idCol.nums.length - 1]}` : `${D.rows.length} filas`;
+    const canGroup = D.mode === 'requests' && !D.groupCol;
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Escena 3 · Conjunto de datos</div>
+      <h1>${D.file} <span class="muted" style="font-weight:500;font-size:.6em">· hoja «${D.sheet}»</span></h1>
+      <div class="tiles" style="margin-bottom:18px">
+        <div class="tile rv" style="--d:.05s"><div class="l">Registros</div><div class="v">${int(D.rows.length)}</div></div>
+        <div class="tile rv" style="--d:.15s"><div class="l">Columnas</div><div class="v">${D.cols.length}</div><div class="x">${D.cols.join(' · ')}</div></div>
+        <div class="tile rv" style="--d:.25s"><div class="l">Periodo / secuencia</div><div class="v" style="font-size:18px">${periodo}</div><div class="x">${idCol ? 'sin marca de tiempo: orden de llegada' : ''}</div></div>
+        ${prop.hits !== null ? `<div class="tile rv" style="--d:.35s"><div class="l">Hits / Misses</div><div class="v"><span class="ok">${int(prop.hits)}</span> / <span class="bad">${int(prop.n - prop.hits)}</span></div></div>` : ''}
+        <div class="tile rv" style="--d:.45s"><div class="l">p̂</div><div class="v hl">${fmt(prop.phat)}</div><div class="x">=${E.phatExpr}</div></div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="toolbar">
+            <div class="seg" id="viewSeg"><button data-v="raw" class="on">Datos del Excel</button><button data-v="grp">${D.mode === 'requests' ? 'Tasa por lote' : 'Tasa por fila'}</button></div>
+            <input type="search" id="q" placeholder="Buscar…" style="flex:1;min-width:140px">
+            <span class="muted small" id="tInfo"></span>
+          </div>
+          <div class="tbl-wrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+          <div class="muted small" style="margin-top:6px">Haz clic en un encabezado para ordenar ▲▼.</div>
+        </div>
+        <div class="stack">
+          <div class="card"><h3><span class="tag">FORMATO DETECTADO</span></h3><p style="margin:0">${modeTxt}</p>
+            <p class="small muted" style="margin:.4em 0 0">${D.mode === 'requests' ? `Columna de aciertos: <b>${D.hitCol.name}</b> (columna ${D.hitCol.letter}).` : D.mode === 'intervals' ? `Peticiones: <b>${D.reqCol.name}</b> · Hits: <b>${D.hitsCol.name}</b>.` : `Tasa: <b>${D.rateCol.name}</b>${D.scale === 100 ? ' (en %, se divide entre 100)' : ''}.`}</p></div>
+          ${D.mode === 'requests' ? `<div class="card warn">
+            <h3>¿Por qué agrupar?</h3>
+            <p class="small" style="margin:0 0 .6em">Cada fila es 0 o 1. Una variable 0/1 solo tiene dos barras posibles: <b>nunca</b> forma una campana. Para estudiar la tasa como variable <b>continua</b> (MTC, histograma, normalidad e IC de la media) se agrupan las peticiones ${D.groupCol ? `por <b>${D.groupCol.name}</b>` : 'en <b>lotes consecutivos</b>'} y se calcula la tasa de cada grupo. La prueba de proporción usa directamente los ${int(prop.n)} ceros y unos.</p>
+            ${canGroup ? `<label class="small" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Peticiones por lote:
+              <select id="gs">${[5, 10, 20, 25, 50, 100].filter(g => D.seq.length / g >= 4).map(g => `<option ${g === groupSize ? 'selected' : ''}>${g}</option>`).join('')}</select>
+              <span class="muted">→ ${groups.length} lotes</span></label>` : ''}
+          </div>` : ''}
+          <div class="card meaning"><h3>¿Qué significa?</h3><p>${D.mode === 'requests' ? `Hay ${int(prop.n)} peticiones observadas y ${int(prop.n - prop.hits)} fueron a parar al origen (miss). Agrupadas, forman <b>${groups.length} tasas</b> que analizaremos como variable continua.` : `Hay ${groups.length} intervalos con su tasa de aciertos.`}</p></div>
+          ${how([
+            { t: 'Número de observaciones', r: `n = ${int(prop.n)}`, xl: '=' + E.nExpr },
+            ...(prop.hits !== null ? [{ t: 'Total de hits', r: `x = ${int(prop.hits)}`, xl: '=' + E.hitsExpr }] : []),
+            { t: 'Proporción de aciertos', f: T`\hat p=\frac{x}{n}`, s: prop.hits !== null ? T`\hat p=\frac{${prop.hits}}{${prop.n}}=${fmt(prop.phat)}` : '', r: `p̂ = ${fmt(prop.phat)}`, xl: '=' + E.phatExpr },
+            { t: 'Columna auxiliar de tasas (para replicar en Excel)', r: `${groups.length} valores en ${E.rate}`, note: E.howRate }
+          ])}
+        </div>
+      </div>
+    </section>`;
+    // ---- Tabla con búsqueda y ordenamiento ----
+    let view = 'raw', sortKey = null, dir = 1;
+    const tbl = $('#tbl'), q = $('#q');
+    const draw = () => {
+      let cols, data;
+      if (view === 'raw') { cols = D.cols; data = D.rows; }
+      else {
+        cols = groups[0].req !== undefined ? ['Grupo', 'Peticiones', 'Hits', 'Misses', 'Tasa'] : ['Grupo', 'Tasa'];
+        data = groups.map(g => g.req !== undefined ? { Grupo: g.label, Peticiones: g.req, Hits: g.hits, Misses: g.req - g.hits, Tasa: +g.rate.toFixed(4) } : { Grupo: g.label, Tasa: +g.rate.toFixed(4) });
+      }
+      const term = q.value.trim().toLowerCase();
+      if (term) data = data.filter(r => cols.some(c => String(r[c] ?? '').toLowerCase().includes(term)));
+      if (sortKey && cols.includes(sortKey)) data = [...data].sort((a, b) => {
+        const x = toNum(a[sortKey]), y = toNum(b[sortKey]);
+        return (Number.isFinite(x) && Number.isFinite(y) ? x - y : String(a[sortKey]).localeCompare(String(b[sortKey]))) * dir;
+      });
+      tbl.tHead.innerHTML = '<tr>' + cols.map(c => `<th class="sort" data-k="${c}">${c}${sortKey === c ? (dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('') + '</tr>';
+      const shown = data.slice(0, 1000);
+      tbl.tBodies[0].innerHTML = shown.map(r => '<tr>' + cols.map(c => {
+        let v = r[c];
+        const isHit = view === 'raw' && D.hitCol && c === D.hitCol.name;
+        if (isHit) return `<td class="mono ${toBin(v) ? 'chip-hit' : 'chip-miss'}">${v} ${toBin(v) ? 'hit' : 'miss'}</td>`;
+        return `<td class="mono">${v ?? ''}</td>`;
+      }).join('') + '</tr>').join('');
+      $('#tInfo').textContent = `${int(data.length)} filas${data.length > 1000 ? ' (se muestran 1000)' : ''}`;
+    };
+    Life.on(tbl, 'click', e => { const th = e.target.closest('th'); if (!th) return; const k = th.dataset.k; dir = sortKey === k ? -dir : 1; sortKey = k; draw(); });
+    Life.on(q, 'input', draw);
+    Life.on($('#viewSeg'), 'click', e => { const b = e.target.closest('button'); if (!b) return; view = b.dataset.v; sortKey = null; [...$('#viewSeg').children].forEach(x => x.classList.toggle('on', x === b)); draw(); });
+    const gs = $('#gs'); if (gs) Life.on(gs, 'change', () => { groupSize = +gs.value; recompute(); toast(`Lotes de ${groupSize} peticiones: todo se recalculó.`); });
+    draw();
+  }
+});
+
+/* ---------------- Escena 4 · MTC y dispersión ---------------- */
+SCENES.push({
+  title: 'MTC',
+  render(el) {
+    const { desc, E, x } = R;
+    // Recta numérica: puntos apilados (dot plot) y marcadores
+    const W = 760, H = 330, pad = 50;
+    // El eje incluye el 0.85 del contrato si está razonablemente cerca de los datos
+    let lo = Math.min(desc.min, desc.mean - desc.sd), hi = Math.max(desc.max, desc.mean + desc.sd);
+    if (P0 > hi && P0 - hi < 3 * ((hi - lo) || 0.05)) hi = P0;
+    if (P0 < lo && lo - P0 < 3 * ((hi - lo) || 0.05)) lo = P0;
+    const span = (hi - lo) || 1, a = lo - span * 0.08, b = hi + span * 0.08;
+    const sx = v => pad + (v - a) / (b - a) * (W - 2 * pad);
+    const base = 200;
+    // Dot plot: el radio se ajusta para que la pila más alta quepa en 130 px
+    const r0 = Math.max(2.5, Math.min(7, 260 / Math.max(10, x.length)));
+    const keyOf = (v, rr) => Math.round(sx(v) / (rr * 2.1));
+    const tallest = rr => { const c = new Map(); x.forEach(v => c.set(keyOf(v, rr), (c.get(keyOf(v, rr)) || 0) + 1)); return Math.max(...c.values()); };
+    let r = r0; while (r > 1.5 && tallest(r) * r * 2.1 > 130) r -= 0.25;
+    const stackCount = new Map(); let dots = '';
+    Stats.sorted(x).forEach((v, i) => {
+      const key = keyOf(v, r);
+      const c = stackCount.get(key) || 0; stackCount.set(key, c + 1);
+      dots += `<circle class="rv" style="--d:${(Math.min(i, 60) * 0.035).toFixed(2)}s" cx="${sx(v)}" cy="${base - r - 2 - c * r * 2.1}" r="${r}" fill="#59c4ff" opacity=".85"/>`;
+    });
+    const t0 = Math.min(x.length, 60) * 0.035 + 0.3;
+    const raw = [
+      ['Mín', desc.min], ['Q1', desc.q1], ['Mediana', desc.median], ['Moda', desc.mode.value],
+      ['Media x̄', desc.mean], ['Q3', desc.q3], ['Máx', desc.max]
+    ].filter(m => m[1] !== null);
+    // Medidas con el mismo valor se agrupan en una sola etiqueta (p. ej. "Mediana = Q3 = Máx")
+    const marks = [];
+    raw.forEach(([lab, v]) => { const g = marks.find(m => Math.abs(sx(m.v) - sx(v)) < 2); g ? g.labs.push(lab) : marks.push({ v, labs: [lab] }); });
+    marks.sort((p, q) => p.v - q.v);
+    let mk = '';
+    marks.forEach((m, i) => {
+      const isMean = m.labs.includes('Media x̄'), col = isMean ? '#ff7a1a' : m.labs.includes('Mediana') ? '#2fe0a0' : m.labs.includes('Moda') ? '#ffc247' : '#a98bff';
+      const lvl = i % 3, y2 = base + 28 + lvl * 30;
+      const anchor = sx(m.v) < 140 ? 'start' : sx(m.v) > W - 140 ? 'end' : 'middle';
+      mk += `<g class="rv" style="--d:${(t0 + i * 0.5).toFixed(2)}s"><line x1="${sx(m.v)}" x2="${sx(m.v)}" y1="${base - 4}" y2="${y2 - 14}" stroke="${col}" stroke-width="2"/>
+        <text x="${sx(m.v)}" y="${y2}" fill="${col}" font-size="14" font-weight="700" text-anchor="${anchor}">${m.labs.join(' = ')} ${fmt(m.v, 3)}</text></g>`;
+    });
+    const tS = t0 + marks.length * 0.5 + 0.2;
+    const band = `<g class="rv" style="--d:${tS}s"><rect x="${sx(desc.mean - desc.sd)}" y="${base - 150}" width="${sx(desc.mean + desc.sd) - sx(desc.mean - desc.sd)}" height="150" fill="#ff7a1a" opacity=".08"/>
+      <line x1="${sx(desc.mean - desc.sd)}" x2="${sx(desc.mean + desc.sd)}" y1="${base - 156}" y2="${base - 156}" stroke="#ff7a1a" stroke-width="2"/>
+      <text x="${sx(desc.mean)}" y="${base - 164}" fill="#ff7a1a" font-size="14" text-anchor="middle" font-weight="700">x̄ ± s = [${fmt(desc.mean - desc.sd, 3)} ; ${fmt(desc.mean + desc.sd, 3)}]</text></g>`;
+    let ticks = '';
+    for (let i = 0; i <= 6; i++) { const v = a + (b - a) * i / 6; ticks += `<line x1="${sx(v)}" x2="${sx(v)}" y1="${base}" y2="${base + 6}" stroke="#647086"/><text x="${sx(v)}" y="${H - 6}" fill="#647086" font-size="12" text-anchor="middle">${v.toFixed(3)}</text>`; }
+    const p85 = 0.85 >= a && 0.85 <= b ? `<g class="rv" style="--d:${tS + .4}s"><line x1="${sx(.85)}" x2="${sx(.85)}" y1="20" y2="${base}" stroke="#ff3d4a" stroke-dasharray="6 5" stroke-width="2"/><text x="${sx(.85)}" y="16" fill="#ff3d4a" font-size="13" text-anchor="middle" font-weight="700">contrato 0.85</text></g>` : '';
+    const rows = [
+      ['Media', T`\bar x`, desc.mean, `=PROMEDIO(${E.rate})`],
+      ['Mediana', T`Me`, desc.median, `=MEDIANA(${E.rate})`],
+      ['Moda', T`Mo`, desc.mode.value, `=MODA.UNO(${E.rate})`],
+      ['Mínimo', T`x_{min}`, desc.min, `=MIN(${E.rate})`],
+      ['Máximo', T`x_{max}`, desc.max, `=MAX(${E.rate})`],
+      ['Rango', T`R`, desc.range, `=MAX(${E.rate})-MIN(${E.rate})`],
+      ['Q1', T`Q_1`, desc.q1, `=CUARTIL.INC(${E.rate};1)`],
+      ['Q2', T`Q_2`, desc.q2, `=CUARTIL.INC(${E.rate};2)`],
+      ['Q3', T`Q_3`, desc.q3, `=CUARTIL.INC(${E.rate};3)`],
+      ['Varianza', T`s^2`, desc.var, `=VAR.S(${E.rate})`],
+      ['Desv. estándar', T`s`, desc.sd, `=DESVEST.M(${E.rate})`],
+      ['Coef. variación', T`CV`, desc.cv, `=DESVEST.M(${E.rate})/PROMEDIO(${E.rate})`]
+    ];
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Escena 4 · Medidas de tendencia central y dispersión</div>
+      <h1>¿Dónde se ubica la tasa de aciertos y cuánto varía?</h1>
+      <p class="lead">Variable analizada: tasa de aciertos de cada uno de los <b>${desc.m}</b> ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'} (puntos azules). Los marcadores aparecen en la recta uno a uno.</p>
+      <div class="grid2">
+        <div class="stack">
+          <div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%">${band}${p85}<line x1="${pad - 10}" x2="${W - pad + 10}" y1="${base}" y2="${base}" stroke="#93a0b4" stroke-width="2"/>${ticks}${dots}${mk}</svg></div>
+          <div class="card"><div class="tbl-wrap" style="max-height:none"><table>
+            <thead><tr><th>Medida</th><th>Símbolo</th><th>Valor</th><th>Excel</th></tr></thead>
+            <tbody>${rows.map(([n, s, v, f], i) => `<tr class="rv" style="--d:${(0.1 + i * 0.06).toFixed(2)}s"><td>${n}</td><td>${tex(s)}</td><td class="mono">${v === null ? '#N/A' : fmt(v, n === 'Varianza' ? 6 : 4)}${n === 'Coef. variación' ? ` (${pct(v, 2)})` : ''}</td><td class="mono small" style="color:#b6f0c9">${f}</td></tr>`).join('')}</tbody>
+          </table></div></div>
+        </div>
+        <div class="stack">
+          <div class="card meaning"><h3>¿Qué significa?</h3>
+            <p>En promedio, la tasa de aciertos fue <b>${pct(desc.mean)}</b>, ${desc.mean < P0 ? `<span class="bad">${((P0 - desc.mean) * 100).toFixed(1)} puntos por debajo</span> del 85 % pactado` : '<span class="ok">por encima</span> del 85 % pactado'}. La mitad de los ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'} estuvo en ${pct(desc.median)} o menos (mediana).</p>
+            <p>La desviación estándar de <b>${fmt(desc.sd, 4)}</b> (CV = ${pct(desc.cv, 1)}) indica ${desc.cv < 0.1 ? 'poca variación entre grupos: la caída fue <b>sostenida</b>, no un pico aislado' : 'bastante variación entre grupos'}.${desc.max < P0 ? ` Ni siquiera el mejor ${R.D.mode === 'requests' ? 'lote' : 'intervalo'} (${pct(desc.max)}) alcanzó el 85 %.` : ''}</p>
+            ${desc.mode.value !== null ? `<p class="small muted">Moda = ${fmt(desc.mode.value, 3)} (se repite ${desc.mode.count} veces). Como la variable es continua, la escena 5 muestra también la <b>clase modal</b>.</p>` : `<p class="small muted">Ningún valor se repite: Excel devuelve #N/A en la moda. Se usa la clase modal del histograma.</p>`}
+          </div>
+          ${how([
+            { t: 'Media', f: T`\bar x=\frac{\sum x_i}{n}`, s: T`\bar x=\frac{${fmt(desc.sum)}}{${desc.m}}`, r: `x̄ = ${fmt(desc.mean)}`, xl: `=PROMEDIO(${E.rate})` },
+            { t: 'Mediana', f: T`Me = x_{\left(\frac{n+1}{2}\right)}`, s: T`\text{posición}=\frac{${desc.m}+1}{2}=${(desc.m + 1) / 2}`, r: `Me = ${fmt(desc.median)}`, xl: `=MEDIANA(${E.rate})` },
+            { t: 'Varianza muestral (n − 1)', f: T`s^2=\frac{\sum (x_i-\bar x)^2}{n-1}`, s: T`s^2=\frac{${fmt(desc.var * (desc.m - 1), 6)}}{${desc.m - 1}}`, r: `s² = ${fmt(desc.var, 6)}`, xl: `=VAR.S(${E.rate})` },
+            { t: 'Desviación estándar', f: T`s=\sqrt{s^2}`, s: T`s=\sqrt{${fmt(desc.var, 6)}}`, r: `s = ${fmt(desc.sd, 5)}`, xl: `=DESVEST.M(${E.rate})` },
+            { t: 'Coeficiente de variación', f: T`CV=\frac{s}{\bar x}\times100\%`, s: T`CV=\frac{${fmt(desc.sd, 5)}}{${fmt(desc.mean, 4)}}\times100\%`, r: `CV = ${pct(desc.cv, 2)}` },
+            { t: 'Cuartiles (método inclusivo)', f: T`L_q=(n-1)\,q+1`, s: T`L_{0.25}=${((desc.m - 1) * .25 + 1).toFixed(2)},\;L_{0.75}=${((desc.m - 1) * .75 + 1).toFixed(2)}`, r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)} · RIC = ${fmt(desc.iqr)}`, xl: `=CUARTIL.INC(${E.rate};1)`, note: E.howRate }
+          ])}
+        </div>
+      </div>
+    </section>`;
+  }
+});
+
+/* ---------------- Escena 5 · Histograma ---------------- */
+SCENES.push({
+  title: 'Histograma',
+  render(el) {
+    const { hist, desc, E } = R;
+    const lbl = c => `[${c.li.toFixed(3)}, ${c.ls.toFixed(3)}${c === hist.classes[hist.k - 1] ? ']' : ')'}`;
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Escena 5 · Histograma y tabla de frecuencias</div>
+      <h1>El histograma se construye clase por clase</h1>
+      <p class="lead">Regla de Sturges con n = ${desc.m}: ${tex(T`k=1+3.322\log_{10}(${desc.m})=${hist.kRaw.toFixed(3)}\Rightarrow k=${hist.k}`)} clases de amplitud ${tex(T`A=\frac{R}{k}=\frac{${fmt(desc.range)}}{${hist.k}}=${fmt(hist.w, 5)}`)}.</p>
+      <div class="grid2">
+        <div class="stack">
+          <div class="card"><div class="chart-box"><canvas id="hchart"></canvas></div></div>
+          <div class="card"><div class="tbl-wrap" style="max-height:none"><table>
+            <thead><tr><th>Clase</th><th>Marca ${tex('x_c')}</th><th>${tex('f')}</th><th>${tex('f_r')}</th><th>${tex('F')}</th><th>${tex('F_r')}</th></tr></thead>
+            <tbody>${hist.classes.map((c, i) => `<tr id="hr${i}" style="opacity:.12;transition:opacity .4s"><td class="mono">${lbl(c)}</td><td class="mono">${fmt(c.mark)}</td><td class="mono"><b>${c.f}</b></td><td class="mono">${fmt(c.fr)}</td><td class="mono">${c.F}</td><td class="mono">${fmt(c.Fr)}</td></tr>`).join('')}
+            <tr><td><b>Total</b></td><td></td><td class="mono"><b>${desc.m}</b></td><td class="mono">1.0000</td><td></td><td></td></tr></tbody>
+          </table></div></div>
+        </div>
+        <div class="stack">
+          <div class="card meaning"><h3>¿Qué significa?</h3>
+            <p>La clase modal es <b>${lbl(hist.modal)}</b>, con ${hist.modal.f} ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'} (${pct(hist.modal.fr)}).</p>
+            ${R.norm.distinct <= 3 ? `<p><b>Ojo:</b> la tasa solo toma <b>${R.norm.distinct}</b> valores distintos (${[...new Set(R.x.map(v => v.toFixed(3)))].sort().join(' y ')}). Por eso hay clases vacías: los datos se concentran en los extremos y no hay una forma de campana.</p>` : `<p>Observa si las barras forman una campana simétrica alrededor de x̄ = ${fmt(desc.mean, 3)}: es la primera pista para la escena de normalidad.</p>`}
+            <p class="small muted">Barras <span class="hl">naranjas</span>: clases completamente por debajo del 85 % del contrato · <span class="ok">verdes</span>: clases que llegan al 85 % o lo superan.</p>
+          </div>
+          ${how([
+            { t: 'Número de clases (Sturges)', f: T`k=1+3.322\log_{10} n`, s: T`k=1+3.322\log_{10}(${desc.m})=${hist.kRaw.toFixed(4)}`, r: `k = ${hist.k} (se redondea hacia arriba)`, xl: `=REDONDEAR.MAS(1+3,322*LOG10(${desc.m});0)` },
+            { t: 'Rango y amplitud', f: T`A=\frac{x_{max}-x_{min}}{k}`, s: T`A=\frac{${fmt(desc.max)}-${fmt(desc.min)}}{${hist.k}}`, r: `A = ${fmt(hist.w, 6)}`, xl: `=(MAX(${E.rate})-MIN(${E.rate}))/${hist.k}` },
+            { t: 'Límites y marca de clase', f: T`L_i=x_{min}+(i-1)A,\quad L_s=L_i+A,\quad x_c=\frac{L_i+L_s}{2}`, r: `1.ª clase: [${fmt(hist.classes[0].li)}, ${fmt(hist.classes[0].ls)}), marca ${fmt(hist.classes[0].mark)}` },
+            { t: 'Frecuencias', f: T`f_r=\frac{f}{n},\quad F_i=\sum_{j\le i} f_j,\quad F_r=\frac{F}{n}`, r: `Σf = ${desc.m}`, xl: `=CONTAR.SI.CONJUNTO(${E.rate};">="&Li;${E.rate};"<"&Ls)`, note: 'Li y Ls son las celdas con los límites de la clase; en la última clase usa "<=" para incluir el máximo. ' + E.howRate }
+          ])}
+        </div>
+      </div>
+    </section>`;
+    chartTheme();
+    const labels = hist.classes.map(lbl);
+    const chart = Life.chart(new Chart($('#hchart'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Frecuencia', data: hist.classes.map(() => 0), backgroundColor: hist.classes.map(c => c.ls <= P0 ? 'rgba(255,122,26,.85)' : 'rgba(47,224,160,.75)'), borderColor: '#0a0d13', borderWidth: 1, categoryPercentage: 1, barPercentage: 1 }] },
+      options: {
+        maintainAspectRatio: false, animation: { duration: 500 },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `f = ${hist.classes[c.dataIndex].f}` } } },
+        scales: { y: { beginAtZero: true, suggestedMax: Math.max(...hist.classes.map(c => c.f)) + 1, title: { display: true, text: 'Frecuencia absoluta' }, ticks: { precision: 0 } },
+          x: { title: { display: true, text: 'Tasa de aciertos por ' + (R.D.mode === 'requests' ? 'lote' : 'intervalo') }, ticks: { maxRotation: 40, minRotation: 0 } } }
+      }
+    }));
+    hist.classes.forEach((c, i) => Life.timeout(() => {
+      chart.data.datasets[0].data[i] = c.f; chart.update();
+      const tr = document.getElementById('hr' + i); if (tr) tr.style.opacity = 1;
+    }, 400 + i * 550));
+  }
+});
+
+/* ---------------- Escena 6 · ¿Es normal? ----------------
+   Solo con lo visto en clase: forma del histograma frente a la curva normal,
+   propiedad de simetría (media = mediana = moda) y regla empírica. */
+SCENES.push({
+  title: '¿Normal?',
+  render(el) {
+    const { norm, desc, hist, E, x } = R;
+    const { emp, sym } = norm;
+    const verdict = norm.isNormal;
+    const unidad = R.D.mode === 'requests' ? 'lote' : 'intervalo';
+    const modaLab = sym.modeIsClass ? 'Moda (marca de la clase modal)' : 'Moda';
+    const valores = [...new Set(x.map(v => v.toFixed(2)))].sort();
+    // Razones del veredicto, en lenguaje sencillo
+    const reasons = [];
+    if (norm.distinct <= 3) reasons.push(`<b>Histograma:</b> la tasa solo toma ${norm.distinct} valores (${valores.join(' y ')}). Las barras quedan separadas y no forman una campana.`);
+    reasons.push(sym.ok
+      ? `<b>Simetría:</b> la media (${fmt(desc.mean, 3)}), la mediana (${fmt(sym.median, 3)}) y la moda (${fmt(sym.mode, 3)}) prácticamente coinciden, como en una normal.`
+      : `<b>Simetría:</b> en una normal la media, la mediana y la moda coinciden. Aquí la media es ${fmt(desc.mean, 3)}, pero la mediana es ${fmt(sym.median, 3)} y la moda ${fmt(sym.mode, 3)}: <b>no coinciden</b>, la distribución no es simétrica.`);
+    emp.forEach(e => reasons.push(`<b>Regla empírica ±${e.k}σ:</b> ${pct(e.pct)} de los datos frente al ${(e.expected * 100).toFixed(1)} % esperado → ${e.ok ? '<span class="ok">se cumple</span>' : '<span class="bad">no se cumple</span>'}.`));
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Escena 6 · ¿La muestra es normal?</div>
+      <h1>¿La tasa de aciertos por ${unidad} sigue una distribución normal?</h1>
+      <p class="lead">Se revisan tres cosas vistas en clase: la <b>forma</b> del histograma frente a la curva normal, la <b>simetría</b> (en la normal, media = mediana = moda) y la <b>regla empírica</b> 68.3 / 95.4 / 99.7.</p>
+      <div class="grid2 even">
+        <div class="stack">
+          <div class="card"><h3><span class="tag">1</span> Histograma con la curva normal teórica (μ = x̄, σ = s)</h3><div class="chart-box sm"><canvas id="nchart"></canvas></div>
+            <div class="muted small">Si los datos fueran normales, las barras seguirían la forma de campana de la curva azul.</div></div>
+          <div class="card"><h3><span class="tag">2</span> Simetría: ¿media = mediana = moda?</h3>
+            <div class="tiles">
+              <div class="tile rv" style="--d:.3s"><div class="l">Media x̄</div><div class="v hl">${fmt(desc.mean, 3)}</div><div class="x">=PROMEDIO(${E.rate})</div></div>
+              <div class="tile rv" style="--d:.6s"><div class="l">Mediana</div><div class="v">${fmt(sym.median, 3)}</div><div class="x">=MEDIANA(${E.rate})</div></div>
+              <div class="tile rv" style="--d:.9s"><div class="l">${modaLab}</div><div class="v">${fmt(sym.mode, 3)}</div><div class="x">${sym.modeIsClass ? 'clase modal (escena 5)' : `=MODA.UNO(${E.rate})`}</div></div>
+            </div>
+            <p class="small ${sym.ok ? 'ok' : 'bad'}" style="margin:.7em 0 0"><b>${sym.ok ? '✔ Coinciden' : '✘ No coinciden'}</b>: la media se aleja ${fmt(sym.dMedian, 3)} de la mediana, y se acepta como máximo ${fmt(sym.tol, 3)} (un cuarto de la desviación estándar, s/4).</p>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="card"><h3><span class="tag">3</span> Regla empírica: % real dentro de x̄ ± kσ</h3>
+            ${emp.map(e => `<div class="emp-row"><b>±${e.k}σ</b><div class="emp-bar"><div class="real" data-w="${(e.pct * 100).toFixed(1)}"></div><div class="theo" style="left:${e.expected * 100}%"></div></div><span class="mono">${pct(e.pct)} <span class="muted">vs ${(e.expected * 100).toFixed(1)}</span> <span class="${e.ok ? 'ok' : 'bad'}">${e.ok ? '✔' : '✘'}</span></span></div>`).join('')}
+            <div class="muted small">Barra = % real · línea blanca = valor teórico. Se acepta una diferencia de hasta 10, 5 y 3 puntos porcentuales, respectivamente.</div>
+          </div>
+          <div class="verdict ${verdict ? 'yes' : 'no'} rv" style="--d:1.2s"><span class="ico">${verdict ? '✔' : '✘'}</span><span>${verdict ? 'Se puede asumir normalidad' : 'No se puede asumir normalidad'}</span></div>
+          <div class="card meaning"><h3>¿Qué significa?</h3>
+            <ul style="margin:.2em 0 .6em;padding-left:20px">${reasons.map(r => `<li style="margin:.3em 0">${r}</li>`).join('')}</ul>
+            <p><b>¿Afecta la prueba de hipótesis?</b> No. La prueba sobre <i>p</i> no usa las tasas por ${unidad}: usa los ${int(R.prop.n)} ceros y unos. El número de hits sigue una <b>distribución binomial</b>, y la binomial se aproxima a la normal cuando ${tex(T`np_0\ge5`)} y ${tex(T`n(1-p_0)\ge5`)}. Eso se verifica en la escena 8.</p>
+            ${R.periodic ? `<p class="small am">El patrón periódico de los misses (cada ${R.periodic.gap} peticiones) explica por qué las tasas por ${unidad} solo valen ${valores.join(' o ')}.</p>` : ''}
+          </div>
+          ${how([
+            { t: 'Curva normal superpuesta (frecuencia esperada)', f: T`f(x)=n\,A\;\frac{1}{s\sqrt{2\pi}}\,e^{-\frac{1}{2}\left(\frac{x-\bar x}{s}\right)^2}`, s: T`\bar x=${fmt(desc.mean)},\; s=${fmt(desc.sd, 5)},\; n\,A=${desc.m}\times${fmt(hist.w, 5)}`, xl: `=${desc.m}*${xl(hist.w, 5)}*DISTR.NORM.N(x;${xl(desc.mean)};${xl(desc.sd, 5)};FALSO)` },
+            { t: 'Simetría', f: T`\text{Normal}\Rightarrow \bar x = Me = Mo`, s: T`${fmt(desc.mean, 3)}\;\text{vs}\;${fmt(sym.median, 3)}\;\text{vs}\;${fmt(sym.mode, 3)}`, r: `|x̄ − Me| = ${fmt(sym.dMedian, 4)} ${sym.dMedian <= sym.tol ? '≤' : '>'} s/4 = ${fmt(sym.tol, 4)}`, xl: `=ABS(PROMEDIO(${E.rate})-MEDIANA(${E.rate}))` },
+            { t: 'Límites de la regla empírica', f: T`\bar x\pm k\,s`, s: emp.map(e => T`\pm${e.k}s:[${fmt(e.lo)},\,${fmt(e.hi)}]`).join(T`\quad `), xl: `=PROMEDIO(${E.rate})-DESVEST.M(${E.rate})  ·  =PROMEDIO(${E.rate})+DESVEST.M(${E.rate})` },
+            { t: 'Porcentaje real dentro de ±1σ', f: T`\%=\frac{\text{datos entre }\bar x-s\text{ y }\bar x+s}{n}`, s: T`\frac{${emp[0].count}}{${desc.m}}`, r: emp.map(e => `±${e.k}σ: ${e.count}/${desc.m} = ${pct(e.pct)}`).join(' · '), xl: `=CONTAR.SI.CONJUNTO(${E.rate};">="&${xl(emp[0].lo)};${E.rate};"<="&${xl(emp[0].hi)})/${desc.m}` },
+            { t: 'Con la tabla normal estándar', f: T`z=\frac{x-\mu}{\sigma}\;\Rightarrow\;P(-1\le Z\le 1)=0.8413-0.1587=0.6826`, note: 'De ahí sale el 68.3 % de la regla empírica (y de igual forma el 95.4 % con z = ±2 y el 99.7 % con z = ±3).', xl: '=DISTR.NORM.ESTAND.N(1;VERDADERO)-DISTR.NORM.ESTAND.N(-1;VERDADERO)' }
+          ])}
+        </div>
+      </div>
+    </section>`;
+    // Barras de la regla empírica
+    Life.timeout(() => el.querySelectorAll('.emp-bar .real').forEach(b => b.style.width = b.dataset.w + '%'), 300);
+    chartTheme();
+    // Histograma en escala de x lineal con la curva normal teórica
+    const cls = hist.classes, w = hist.w || 0.01;
+    const lo = Math.min(cls[0].li, desc.mean - 3.5 * desc.sd), hi = Math.max(cls[cls.length - 1].ls, desc.mean + 3.5 * desc.sd);
+    const curve = []; for (let i = 0; i <= 160; i++) { const v = lo + (hi - lo) * i / 160; curve.push({ x: v, y: desc.m * w * Stats.normPdf((v - desc.mean) / desc.sd) / desc.sd }); }
+    Life.chart(new Chart($('#nchart'), {
+      data: { datasets: [
+        { type: 'bar', label: 'Frecuencia observada', data: cls.map(c => ({ x: c.mark, y: c.f })), backgroundColor: 'rgba(255,122,26,.7)', categoryPercentage: 1, barPercentage: 1, borderColor: '#0a0d13', borderWidth: 1, order: 2 },
+        { type: 'line', label: 'Normal teórica', data: curve, borderColor: '#59c4ff', borderWidth: 3, pointRadius: 0, tension: 0, order: 1 }
+      ] },
+      options: { maintainAspectRatio: false, animation: { duration: 1400, easing: 'easeOutCubic' },
+        plugins: { legend: { labels: { boxWidth: 14 } } },
+        scales: { x: { type: 'linear', min: lo, max: hi, ticks: { callback: v => (+v).toFixed(3) }, title: { display: true, text: 'Tasa de aciertos' } }, y: { beginAtZero: true, title: { display: true, text: 'Frecuencia' } } } }
+    }));
+  }
+});
+
+/* ---------------- Escena 7 · Intervalos de confianza ---------------- */
+SCENES.push({
+  title: 'IC 95 % y 99 %',
+  render(el) {
+    const { ci, desc, prop, propAlt, E } = R;
+    const items = [
+      { lab: 'Media de la tasa · 95 %', c: ci.mean[0], center: desc.mean, col: '#ff7a1a' },
+      { lab: 'Media de la tasa · 99 %', c: ci.mean[1], center: desc.mean, col: '#ff3d4a' },
+      { lab: 'Proporción p · 95 %', c: ci.prop[0], center: prop.phat, col: '#59c4ff' },
+      { lab: 'Proporción p · 99 %', c: ci.prop[1], center: prop.phat, col: '#a98bff' }
+    ];
+    if (ci.propAlt) items.push({ lab: 'p con n = intervalos · 95 %', c: ci.propAlt[0], center: propAlt.phat, col: '#2fe0a0' }, { lab: 'p con n = intervalos · 99 %', c: ci.propAlt[1], center: propAlt.phat, col: '#2fe0a0' });
+    const lo = Math.min(...items.map(i => i.c.lo), 0.85), hi = Math.max(...items.map(i => i.c.hi), 0.85);
+    const span = hi - lo, a = lo - span * 0.12, b = hi + span * 0.12;
+    const W = 780, rowH = 58, top = 40, H = top + items.length * rowH + 40, L = 210, Rr = 30;
+    const sx = v => L + (v - a) / (b - a) * (W - L - Rr);
+    const inside = c => 0.85 >= c.lo && 0.85 <= c.hi;
+    let svg = `<line x1="${sx(.85)}" x2="${sx(.85)}" y1="${top - 22}" y2="${H - 30}" stroke="#ff3d4a" stroke-width="3" stroke-dasharray="7 5" class="pulse"/>
+      <text x="${sx(.85)}" y="${top - 26}" fill="#ff3d4a" font-size="15" font-weight="800" text-anchor="middle">p₀ = 0.85 (contrato)</text>`;
+    items.forEach((it, i) => {
+      const y = top + i * rowH + 22, d = (0.3 + i * 0.5).toFixed(2);
+      svg += `<text x="${L - 14}" y="${y + 5}" fill="#c9d2de" font-size="15" text-anchor="end">${it.lab}</text>
+        <g class="rv" style="--d:${d}s"><circle cx="${sx(it.center)}" cy="${y}" r="6" fill="${it.col}"/></g>
+        <g><rect x="${sx(it.c.lo)}" y="${y - 7}" width="${sx(it.c.hi) - sx(it.c.lo)}" height="14" rx="7" fill="${it.col}" opacity=".35" style="transform-origin:${sx(it.center)}px ${y}px;transform:scaleX(0);animation:grow 1s cubic-bezier(.2,.8,.2,1) ${d}s forwards"/></g>
+        <g class="rv" style="--d:${(+d + .8).toFixed(2)}s"><text x="${sx(it.c.lo)}" y="${y + 26}" fill="${it.col}" font-size="13" text-anchor="middle" class="mono">${fmt(it.c.lo)}</text><text x="${sx(it.c.hi)}" y="${y + 26}" fill="${it.col}" font-size="13" text-anchor="middle">${fmt(it.c.hi)}</text>
+        <text x="${L - 14}" y="${y + 22}" fill="${inside(it.c) ? '#2fe0a0' : '#ff3d4a'}" font-size="12" font-weight="700" text-anchor="end">${inside(it.c) ? '✔ 0.85 dentro' : '✘ 0.85 fuera'}</text></g>`;
+    });
+    for (let i = 0; i <= 5; i++) { const v = a + (b - a) * i / 5; svg += `<text x="${sx(v)}" y="${H - 8}" fill="#647086" font-size="12" text-anchor="middle">${v.toFixed(3)}</text><line x1="${sx(v)}" x2="${sx(v)}" y1="${top - 6}" y2="${H - 26}" stroke="rgba(255,255,255,.05)"/>`; }
+    const pIn95 = inside(ci.prop[0]), pIn99 = inside(ci.prop[1]);
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Escena 7 · Intervalos de confianza</div>
+      <h1>¿Cabe el 85 % dentro de lo que dicen los datos?</h1>
+      <p class="lead">Un intervalo de confianza es el rango de valores plausibles para el parámetro. Si el 0.85 queda <b>fuera</b> (por encima), los datos no son compatibles con que Fastly haya cumplido.</p>
+      <div class="grid2">
+        <div class="stack">
+          <div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%">${svg}</svg></div>
+          <div class="card"><div class="tbl-wrap" style="max-height:none"><table>
+            <thead><tr><th>Intervalo</th><th>Centro</th><th>z</th><th>Error est.</th><th>Margen</th><th>Límite inf.</th><th>Límite sup.</th><th>¿0.85?</th></tr></thead>
+            <tbody>${items.map(it => `<tr><td>${it.lab}</td><td class="mono">${fmt(it.center)}</td><td class="mono">${it.c.z}</td><td class="mono">${fmt(it.c.me / it.c.z, 5)}</td><td class="mono">${fmt(it.c.me, 5)}</td><td class="mono">${fmt(it.c.lo)}</td><td class="mono">${fmt(it.c.hi)}</td><td class="${inside(it.c) ? 'ok' : 'bad'}"><b>${inside(it.c) ? 'dentro' : 'fuera'}</b></td></tr>`).join('')}</tbody>
+          </table></div></div>
+        </div>
+        <div class="stack">
+          <div class="card meaning"><h3>¿Qué significa?</h3>
+            <p>Con 95 % de confianza, la tasa real de aciertos está entre <b>${pct(ci.prop[0].lo)}</b> y <b>${pct(ci.prop[0].hi)}</b>. Con 99 %, entre ${pct(ci.prop[1].lo)} y ${pct(ci.prop[1].hi)}.</p>
+            <p>${!pIn95 && !pIn99 && ci.prop[1].hi < P0 ? '<b class="bad">El 0.85 queda por encima de ambos intervalos</b>: incluso en el escenario más favorable para Fastly, la tasa no llega a lo pactado.' : pIn99 && !pIn95 ? 'El 0.85 queda fuera del 95 % pero dentro del 99 %: la evidencia es moderada y depende del nivel de exigencia.' : pIn95 ? '<b class="ok">El 0.85 está dentro del intervalo</b>: los datos son compatibles con que Fastly cumplió.' : 'El 0.85 queda fuera de los intervalos.'}</p>
+            <p class="small muted">El intervalo del 99 % siempre es más ancho que el del 95 %: más confianza exige más margen.</p>
+            <p class="small muted">El IC de la media usa la variabilidad <i>entre ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'}</i> (s/√${desc.m}) y el de la proporción usa la variabilidad binomial √(p̂(1−p̂)/n). ${ci.seMean < ci.seProp * 0.6 ? 'Aquí el de la media es mucho más estrecho porque los lotes casi no varían entre sí (el patrón regular de la muestra).' : ''}</p>
+          </div>
+          ${how([
+            { t: 'IC para la media', f: T`\bar x \pm z_{\alpha/2}\,\frac{s}{\sqrt n}`, s: T`${fmt(desc.mean)}\pm 1.96\cdot\frac{${fmt(desc.sd, 5)}}{\sqrt{${desc.m}}}=${fmt(desc.mean)}\pm${fmt(ci.mean[0].me, 5)}`, r: `95 %: [${fmt(ci.mean[0].lo)}, ${fmt(ci.mean[0].hi)}] · 99 %: [${fmt(ci.mean[1].lo)}, ${fmt(ci.mean[1].hi)}]`, xl: `=PROMEDIO(${E.rate})-INTERVALO.CONFIANZA.NORM(0,05;DESVEST.M(${E.rate});CONTAR(${E.rate}))` },
+            { t: 'Error estándar de la proporción (con p̂)', f: T`SE=\sqrt{\frac{\hat p(1-\hat p)}{n}}`, s: T`SE=\sqrt{\frac{${fmt(prop.phat)}(${fmt(1 - prop.phat)})}{${prop.n}}}`, r: `SE = ${fmt(ci.seProp, 5)}`, xl: `=RAIZ(${E.phatExpr}*(1-${E.phatExpr})/${E.nExpr})` },
+            { t: 'IC para la proporción', f: T`\hat p\pm z_{\alpha/2}\sqrt{\frac{\hat p(1-\hat p)}{n}}`, s: T`${fmt(prop.phat)}\pm 2.576\cdot${fmt(ci.seProp, 5)}=${fmt(prop.phat)}\pm${fmt(ci.prop[1].me, 5)}`, r: `95 %: [${fmt(ci.prop[0].lo)}, ${fmt(ci.prop[0].hi)}] · 99 %: [${fmt(ci.prop[1].lo)}, ${fmt(ci.prop[1].hi)}]`, xl: `=${E.phatExpr}-1,96*RAIZ(${E.phatExpr}*(1-${E.phatExpr})/${E.nExpr})` },
+            { t: 'Valores z de la tabla', f: T`z_{0.025}=1.96,\qquad z_{0.005}=2.576`, xl: '=INV.NORM.ESTAND(0,975)  ·  =INV.NORM.ESTAND(0,995)', note: 'En el IC se usa p̂ en el error estándar porque no suponemos ningún valor de p. En la prueba de hipótesis (escena 8) se usa p₀ porque se calcula suponiendo que H₀ es cierta.' }
+          ])}
+        </div>
+      </div>
+    </section>`;
+  }
+});
+
+/* ---------------- Escena 8 · Prueba de hipótesis ---------------- */
+SCENES.push({
+  title: 'Prueba de hipótesis',
+  render(el) {
+    const { prop, test, testAlt, binom, propAlt, E } = R;
+    const big = prop.n > 10000;
+    const dif = prop.phat - P0;
+    const steps = [
+      { h: 'Paso 1 · Planteamiento', b: `<div class="hyp"><span class="h ok">${tex(T`H_0: p\ge 0.85`)}</span><span>Fastly cumplió el contrato.</span><span class="h bad">${tex(T`H_1: p< 0.85`)}</span><span>La tasa cayó: Fastly es responsable.</span></div><p class="small muted" style="margin:.4em 0 0">Unilateral izquierda · α = 0.05 (y 0.01 como comparación).</p>` },
+      { h: 'Paso 2 · Condiciones (aproximación normal a la binomial)', b: `${tex(T`\begin{aligned}np_0&=${prop.n}(0.85)=${fmt(test.np0, 1)}${test.np0 >= 5 ? '\\ge' : '<'}5\;${test.np0 >= 5 ? '\\checkmark' : '\\times'}\\ n(1-p_0)&=${prop.n}(0.15)=${fmt(test.nq0, 1)}${test.nq0 >= 5 ? '\\ge' : '<'}5\;${test.nq0 >= 5 ? '\\checkmark' : '\\times'}\end{aligned}`, true)}<p class="small ${test.condOk ? 'ok' : 'bad'}" style="margin:0">${test.condOk ? 'Se cumplen: la distribución muestral de p̄ es aproximadamente normal.' : 'No se cumplen: la aproximación normal no es confiable.'}</p>` },
+      { h: 'Paso 3 · Error estándar con p₀', b: tex(T`\sigma_{\bar p}=\sqrt{\frac{p_0(1-p_0)}{n}}=\sqrt{\frac{0.85(0.15)}{${prop.n}}}=${fmt(test.se0, 5)}`, true) + `<p class="small muted" style="margin:0">Se usa p₀ (no p̂) porque se calcula <i>suponiendo que H₀ es cierta</i>.</p>` },
+      { h: 'Paso 4 · Estadístico de prueba', b: tex(T`z=\frac{\bar p-p_0}{\sigma_{\bar p}}=\frac{${fmt(prop.phat)}-0.85}{${fmt(test.se0, 5)}}=\mathbf{${fmt(test.z)}}`, true) + (binom ? `<p class="small muted" style="margin:0">Equivale a estandarizar el número de hits: ${tex(T`z=\frac{x-\mu}{\sigma}=\frac{${binom.x}-${fmt(binom.mu, 1)}}{${fmt(binom.sigma, 4)}}=${fmt(binom.z)}`)}. ${Math.abs(binom.z) > 3 ? `Por la regla empírica, quedar a más de 3σ ocurre menos del 0.3 % de las veces.` : ''}</p>` : '') },
+      { h: 'Paso 5 · Valor crítico', b: `${tex(T`z_{0.05}=-1.645\qquad z_{0.01}=-2.326`)}<p class="small" style="margin:.3em 0 0">Regla: rechazar H₀ si ${tex(T`z\le z_\alpha`)}. ${fmt(test.z, 4)} ${test.z <= test.zc05 ? '≤' : '>'} −1.645 y ${fmt(test.z, 4)} ${test.z <= test.zc01 ? '≤' : '>'} −2.326.</p>` },
+      { h: 'Paso 6 · Valor p', b: `${tex(T`\text{valor }p=P(Z\le ${fmt(test.z)})=${texP(test.pval)}`, true)}<div class="big-num" id="pAnim" style="color:var(--blue)">0.0000</div><p class="small muted" style="margin:.3em 0 0">En decimal: ${test.pval.toFixed(8)}. Es el área de la cola izquierda de la tabla normal estándar.</p>` },
+      { h: 'Paso 7 · Decisión', b: `<table class="decision-tbl"><thead><tr><th>α</th><th>Valor crítico</th><th>Valor p</th><th>Decisión</th></tr></thead><tbody>
+          ${[[0.05, test.zc05, test.reject05], [0.01, test.zc01, test.reject01]].map(([a, zc, rj]) => `<tr><td class="mono">${a}</td><td>${fmt(test.z, 3)} ${test.z <= zc ? '≤' : '>'} ${fmt(zc, 3)}</td><td>${fmtP(test.pval)} ${test.pval < a ? '<' : '≥'} ${a}</td><td class="${rj ? 'bad' : 'ok'}"><b>${rj ? 'Rechazar H₀' : 'No rechazar H₀'}</b></td></tr>`).join('')}
+        </tbody></table>
+        <div class="verdict ${test.reject05 ? 'no' : 'yes'}" style="margin-top:12px"><span class="ico">⚖</span><span>${test.reject05 ? 'Gana NYT/Reddit: hay evidencia de que la tasa de aciertos de Fastly cayó por debajo del 85 %.' : 'Gana Fastly: no hay evidencia suficiente de que la tasa cayera por debajo del 85 %.'}</span></div>` }
+    ];
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Escena 8 · Prueba de hipótesis para una proporción</div>
+      <h1>¿Fue azar del muestreo o una caída real?</h1>
+      <div class="grid2">
+        <div class="stack" style="align-self:stretch">
+          <div class="card sticky" style="top:0">
+            <h3><span class="tag">N(0,1)</span> Distribución del estadístico si H₀ es cierta</h3>
+            <div id="curve"></div>
+            <div class="muted small">Naranja: región de rechazo con α = 0.05 · rojo: con α = 0.01 · rayado azul: área del valor p.</div>
+            <div class="toolbar" style="margin-top:10px"><button class="btn" id="replay">↻ Repetir animación</button><button class="btn" id="skip">Mostrar todo</button></div>
+          </div>
+          <div class="card ${big ? 'warn' : ''}">
+            <h3>Significancia estadística vs. práctica</h3>
+            <p class="small" style="margin:0">${big ? `<b>Con n = ${int(prop.n)} peticiones, incluso una caída mínima sale «significativa».</b> Por eso hay que mirar el tamaño del efecto: ` : 'Además de la significancia, importa el tamaño del efecto: '}
+            p̂ − p₀ = <b>${(dif * 100).toFixed(2)} puntos porcentuales</b>. En la práctica los misses pasan de 15 % a ${pct(1 - prop.phat)}: el origen recibe <b>${pct((1 - prop.phat) / (1 - P0) - 1, 0)}</b> ${dif < 0 ? 'más' : 'menos'} tráfico que lo pactado. ${Math.abs(dif) >= 0.02 ? 'Es una diferencia <b>prácticamente relevante</b>: basta para saturar una base de datos dimensionada para el 15 %.' : 'Es una diferencia pequeña en la práctica, aunque sea estadísticamente significativa.'}</p>
+          </div>
+          ${testAlt ? `<div class="card"><h3>Versión con n = número de intervalos (${propAlt.n})</h3><p class="small" style="margin:0">${tex(T`z=\frac{${fmt(propAlt.phat)}-0.85}{\sqrt{0.85(0.15)/${propAlt.n}}}=${fmt(testAlt.z)}`)}, valor p = ${fmtP(testAlt.pval)} → ${testAlt.reject05 ? '<b class="bad">rechazar H₀</b>' : '<b class="ok">no rechazar H₀</b>'} (α = 0.05). Con menos «n» el error estándar crece y la prueba es más conservadora.</p></div>` : ''}
+        </div>
+        <div class="stack">
+          <div class="steps">${steps.map((s, i) => `<div class="step" id="st${i}"><div class="n">${s.h}</div><div>${s.b}</div></div>`).join('')}</div>
+          ${how([
+            { t: 'Estadístico z', f: T`z=\frac{\hat p-p_0}{\sqrt{p_0(1-p_0)/n}}`, s: T`z=\frac{${fmt(prop.phat)}-0.85}{\sqrt{0.85(0.15)/${prop.n}}}`, r: `z = ${fmt(test.z, 4)}`, xl: `=(${E.phatExpr}-0,85)/RAIZ(0,85*0,15/${E.nExpr})` },
+            { t: 'Valor p (cola izquierda)', f: T`p=\Phi(z)`, s: T`\Phi(${fmt(test.z, 4)})`, r: `valor p = ${fmtP(test.pval)} = ${test.pval.toFixed(8)}`, xl: `=DISTR.NORM.ESTAND.N(${xl(test.z)};VERDADERO)` },
+            { t: 'Valores críticos', f: T`z_\alpha=\Phi^{-1}(\alpha)`, r: `z₀.₀₅ = ${fmt(test.zc05)} · z₀.₀₁ = ${fmt(test.zc01)}`, xl: '=INV.NORM.ESTAND(0,05)  ·  =INV.NORM.ESTAND(0,01)' },
+            { t: 'p₀ en la prueba, p̂ en el IC', note: 'En la prueba, el error estándar se calcula con p₀ = 0.85 porque toda la prueba supone H₀ cierta. En el intervalo de confianza no hay hipótesis, así que se usa la mejor estimación disponible: p̂.' }
+          ])}
+        </div>
+      </div>
+    </section>`;
+    // ---- Animación paso a paso ----
+    const curveEl = $('#curve');
+    const drawCurve = (z, showP) => curveEl.innerHTML = normalCurveSVG({ z, showP });
+    const play = (instant = false) => {
+      Life.clear(); bindButtons();
+      steps.forEach((_, i) => { const s = $('#st' + i); s.classList.remove('on', 'cur'); });
+      drawCurve(NaN, false);
+      const at = i => { steps.forEach((_, j) => $('#st' + j).classList.toggle('cur', j === i)); $('#st' + i).classList.add('on'); };
+      if (instant) { steps.forEach((_, i) => $('#st' + i).classList.add('on')); drawCurve(test.z, true); $('#pAnim').textContent = fmtP(test.pval); return; }
+      steps.forEach((_, i) => Life.timeout(() => {
+        at(i);
+        if (i === 3) tween(1600, k => drawCurve(test.z * k, false));       // z viaja desde 0
+        if (i === 5) {
+          drawCurve(test.z, true);
+          tween(1400, k => { const e = $('#pAnim'); if (e) e.textContent = (k < 1 ? (0.5 - (0.5 - test.pval) * k).toFixed(4) : fmtP(test.pval)); });
+        }
+      }, 300 + i * 1700));
+    };
+    const bindButtons = () => { Life.on($('#replay'), 'click', () => play()); Life.on($('#skip'), 'click', () => play(true)); };
+    play();
+  }
+});
+
+/* ---------------- Escena 9 · Veredicto ---------------- */
+SCENES.push({
+  title: 'Veredicto',
+  render(el) {
+    const { prop, test, ci } = R;
+    const rj = test.reject05;
+    el.innerHTML = `
+    <section class="scene">
+      <div class="kicker">Escena 9 · Veredicto final</div>
+      <h1>Sentencia</h1>
+      <div class="grid2">
+        <div class="court">
+          <h2>SENTENCIA ESTADÍSTICA</h2>
+          <div class="sub">Tribunal de Inferencia · Caso N.º 4 · Proceso por incumplimiento del SLA de caché</div>
+          <div class="vs"><div class="party ${rj ? '' : 'win'}">FASTLY, INC.<br><small>(defiende H₀: p ≥ 0.85)</small></div><b>vs.</b><div class="party ${rj ? 'win' : ''}">THE NEW YORK TIMES · REDDIT<br><small>(sostienen H₁: p &lt; 0.85)</small></div></div>
+          <b>CONSIDERANDO:</b>
+          <ol>
+            <li>Que se examinaron <b>${int(prop.n)}</b> peticiones${prop.hits !== null ? `, de las cuales <b>${int(prop.hits)}</b> se resolvieron en caché` : ''}, para una tasa observada de <b>${pct(prop.phat)}</b> (p̂ = ${fmt(prop.phat)}).</li>
+            <li>Que se cumplen las condiciones np₀ = ${fmt(test.np0, 0)} ≥ 5 y n(1 − p₀) = ${fmt(test.nq0, 0)} ≥ 5.</li>
+            <li>Que el estadístico de prueba es z = <b>${fmt(test.z)}</b>, frente al valor crítico de −1.645 (α = 0.05), con un valor p de <b>${fmtP(test.pval)}</b>.</li>
+            <li>Que el intervalo de confianza del 95 % para p es [${fmt(ci.prop[0].lo)}; ${fmt(ci.prop[0].hi)}] y el del 99 % es [${fmt(ci.prop[1].lo)}; ${fmt(ci.prop[1].hi)}]; ${ci.prop[1].hi < P0 ? 'ninguno contiene el 0.85 pactado' : ci.prop[0].hi < P0 ? 'el del 95 % no contiene el 0.85' : 'el 0.85 está contenido en ellos'}.</li>
+            <li>Que con α = 0.01 la decisión ${test.reject01 === test.reject05 ? '<b>se mantiene</b>' : '<b>cambia</b>'} (${test.reject01 ? 'se rechaza' : 'no se rechaza'} H₀).</li>
+          </ol>
+          <div class="resuelve"><b>RESUELVE:</b> ${rj
+            ? `<b>RECHAZAR H₀.</b> Hay evidencia estadística suficiente de que la tasa de aciertos en caché de Fastly cayó por debajo del 85 % estipulado. Se declara a <b>Fastly responsable</b> de los costos derivados de la saturación de los servidores origen de NYT y Reddit.`
+            : `<b>NO RECHAZAR H₀.</b> No hay evidencia suficiente de que la tasa cayera por debajo del 85 %. Se <b>absuelve a Fastly</b>; el colapso se atribuye a la configuración de los balanceadores de los propios medios.`}</div>
+          <div class="stamp-row"><div class="stamp ${rj ? 'red' : 'green'}">${rj ? 'FASTLY<br>RESPONSABLE' : 'FASTLY<br>ABSUELTO'}<small>α = 0.05 · p = ${fmtP(test.pval)}</small></div></div>
+        </div>
+        <div class="stack">
+          <div class="card"><h3><span class="tag">ERRORES</span> ¿Y si el tribunal se equivoca?</h3>
+            <table class="decision-tbl small">
+              <thead><tr><th></th><th>Realidad: H₀ cierta<br><span class="muted">(Fastly cumplió)</span></th><th>Realidad: H₀ falsa<br><span class="muted">(Fastly falló)</span></th></tr></thead>
+              <tbody>
+                <tr><td><b>Rechazar H₀</b><br><span class="muted">culpar a Fastly</span></td><td class="bad"><b>Error tipo I</b><br>P = α</td><td class="ok">Decisión correcta</td></tr>
+                <tr><td><b>No rechazar H₀</b><br><span class="muted">absolver a Fastly</span></td><td class="ok">Decisión correcta</td><td class="am"><b>Error tipo II</b><br>P = β</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="err-grid">
+            <div class="err" style="border-color:rgba(255,61,74,.5)"><h3 class="bad">Error tipo I (α)</h3>
+              <p class="small"><b>Culpar a Fastly cuando la tasa sí se sostuvo.</b> Fastly paga indemnizaciones injustas y sufre daño reputacional; los medios no corrigen sus balanceadores y el problema se repite.</p>
+              <p class="small"><b>Más costoso para Fastly.</b> Por eso H₀ lo protege (como la presunción de inocencia) y α se fija bajo: P(error I) ≤ 0.05. Con α = 0.01 la protección es mayor.</p>
+            </div>
+            <div class="err" style="border-color:rgba(255,194,71,.5)"><h3 class="am">Error tipo II (β)</h3>
+              <p class="small"><b>Absolver a Fastly cuando sí falló.</b> NYT y Reddit absorben los costos del apagón y siguen con un proveedor que no cumple.</p>
+              <p class="small"><b>Más costoso para NYT/Reddit.</b> Es más probable cuando la caída real es pequeña o la muestra es pequeña: los datos no alcanzan a demostrar el incumplimiento.</p>
+            </div>
+          </div>
+          <div class="card small"><b>El equilibrio entre los dos errores:</b> bajar α de 0.05 a 0.01 protege más a Fastly (menos error tipo I), pero hace más difícil culparlo cuando sí falló (más error tipo II, que perjudica a los medios).</div>
+          <div class="card meaning"><h3>¿Qué significa?</h3><p>${rj
+            ? `Como se rechazó H₀, el único error posible es el <b>tipo I</b>. Su probabilidad está acotada por α = 0.05, y el valor p (${fmtP(test.pval)}) indica que, si Fastly hubiera cumplido, ver una tasa tan baja sería extremadamente raro.`
+            : `Como no se rechazó H₀, el único error posible es el <b>tipo II</b>: que Fastly sí haya fallado pero la muestra no alcanzara a demostrarlo.`}</p></div>
+          ${how([
+            { t: 'Probabilidad de error tipo I', f: T`P(\text{error tipo I})=\alpha`, r: 'α = 0.05 (principal) · α = 0.01 (comparación)' },
+            { t: 'Decisión', f: T`\text{Rechazar }H_0\iff z\le z_\alpha\iff \text{valor }p<\alpha`, s: T`${fmt(test.z, 4)}\le-1.645,\qquad ${texP(test.pval)}<0.05`, r: rj ? 'Se rechaza H₀ → el único error posible es el tipo I' : 'No se rechaza H₀ → el único error posible es el tipo II', xl: `=DISTR.NORM.ESTAND.N(${xl(test.z)};VERDADERO)<0,05` }
+          ])}
+        </div>
+      </div>
+    </section>`;
+  }
+});
+
+/* =====================================================================
+   6. NAVEGACIÓN, CARGA DE ARCHIVOS Y ARRANQUE
+   ===================================================================== */
+let current = 0;
+function renderScene(i, keepScroll = false) {
+  current = Math.max(0, Math.min(SCENES.length - 1, i));
+  Life.clear();
+  const stage = $('#stage');
+  const y = stage.scrollTop;
+  try { SCENES[current].render(stage); }
+  catch (e) { console.error(e); stage.innerHTML = `<div class="card warn"><h3>Error al dibujar la escena</h3><p class="mono small">${e.message}</p></div>`; }
+  stage.scrollTop = keepScroll ? y : 0;
+  $('#progBar').style.width = ((current + 1) / SCENES.length * 100) + '%';
+  $('#where').innerHTML = `<b>${current + 1} / ${SCENES.length}</b> · ${SCENES[current].title} <span class="kbdh">&nbsp; <span class="kbd">←</span> <span class="kbd">→</span></span>`;
+  $('#btnPrev').disabled = current === 0;
+  $('#btnNext').disabled = current === SCENES.length - 1;
+  document.querySelectorAll('.dot').forEach((d, j) => { d.classList.toggle('on', j === current); d.classList.toggle('done', j < current); });
+  document.querySelector('.dot.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  try { history.replaceState(null, '', '#' + (current + 1)); } catch (e) { /* el visor puede bloquearlo */ }
+}
+function recompute() {
+  R = compute(DATA);
+  const D = DATA;
+  $('#dsBadge').textContent = `${D.file} · n = ${int(R.prop.n)} · p̂ = ${fmt(R.prop.phat)}`;
+  renderScene(current, true);
+}
+// Puntos de navegación
+$('#dots').innerHTML = SCENES.map((s, i) => `<button class="dot" data-i="${i}">${i + 1}. ${s.title}</button>`).join('');
+$('#dots').addEventListener('click', e => { const d = e.target.closest('.dot'); if (d) renderScene(+d.dataset.i); });
+$('#btnPrev').onclick = () => renderScene(current - 1);
+$('#btnNext').onclick = () => renderScene(current + 1);
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input,select,textarea')) return;
+  if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); renderScene(current + 1); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); renderScene(current - 1); }
+});
+// Arranque
+(function start() {
+  if (typeof Chart === 'undefined' || typeof katex === 'undefined') {
+    $('#stage').innerHTML = '<div class="card warn"><h3>No se cargaron las librerías</h3><p>Este programa necesita conexión a internet para descargar Chart.js y KaTeX desde la CDN. Conéctate y recarga la página.</p></div>';
+    return;
+  }
+  DATA = embeddedDataset();
+  R = compute(DATA);
+  $('#dsBadge').textContent = `${DATA.file} · n = ${int(R.prop.n)} · p̂ = ${fmt(R.prop.phat)}`;
+  const h = parseInt(location.hash.slice(1), 10);
+  renderScene(Number.isFinite(h) ? h - 1 : 0);
+})();
+</script>
+</body>
+</html>
