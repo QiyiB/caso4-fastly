@@ -95,6 +95,21 @@ ul.keys li b{color:#fff}
 table.mtc td{white-space:normal;vertical-align:top}
 table.mtc td.what{text-align:left;color:var(--muted);font-size:14px}
 table.mtc td.read{text-align:left;font-size:14px}
+/* Procedimiento paso a paso desplegable */
+.proc-btn{display:inline-flex;align-items:center;gap:4px;margin-top:6px;background:rgba(255,122,26,.10);border:1px solid rgba(255,122,26,.45);border-radius:7px;color:var(--orange);font:600 12px Inter,sans-serif;padding:3px 8px;cursor:pointer;white-space:nowrap}
+.proc-btn:hover{background:rgba(255,122,26,.22);color:#fff}
+.proc-btn .car{transition:transform .2s;display:inline-block}
+.proc-btn.on .car{transform:rotate(180deg)}
+tr.proc{display:none}
+tr.proc.on{display:table-row}
+tr.proc>td{background:#0d121b;padding:12px 16px 14px;text-align:left;white-space:normal}
+ol.psteps{margin:0;padding:0;list-style:none;counter-reset:ps;display:flex;flex-direction:column;gap:8px}
+ol.psteps>li{counter-increment:ps;position:relative;padding:8px 10px 8px 40px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+ol.psteps>li::before{content:counter(ps);position:absolute;left:10px;top:8px;width:22px;height:22px;border-radius:50%;background:var(--orange);color:#111;font:700 12px var(--mono);display:grid;place-items:center}
+ol.psteps .pt{font-weight:700;font-size:14px;color:var(--amber)}
+ol.psteps .pf{overflow-x:auto;overflow-y:hidden;font-size:15px}
+ol.psteps .pr{font:600 14px var(--mono);color:var(--green);margin-top:2px}
+ol.psteps .pn{font-size:13px;color:var(--muted)}
 
 /* ---------- Panel ¿Cómo se hizo? ---------- */
 details.how{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
@@ -650,6 +665,24 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-copy]');
   if (b) { navigator.clipboard?.writeText(b.dataset.copy)?.catch(() => {}); b.textContent = '✓'; setTimeout(() => b.textContent = 'copiar', 1200); }
 });
+// Botones "Paso a paso": muestran u ocultan la fila con el procedimiento
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-proc]');
+  if (!b) return;
+  const row = document.getElementById(b.dataset.proc);
+  if (row) { row.classList.toggle('on'); b.classList.toggle('on', row.classList.contains('on')); }
+});
+const procBtn = id => `<br><button class="proc-btn" data-proc="${id}">Paso a paso <span class="car">▾</span></button>`;
+/** Lista numerada de pasos: {t: título, f: LaTeX, r: resultado, n: nota, xl: fórmula Excel}. */
+function procHTML(steps) {
+  return `<ol class="psteps">${steps.map(st => `<li>
+    ${st.t ? `<div class="pt">${st.t}</div>` : ''}
+    ${st.f ? `<div class="pf">${tex(st.f, true)}</div>` : ''}
+    ${st.r ? `<div class="pr">${st.r}</div>` : ''}
+    ${st.n ? `<div class="pn">${st.n}</div>` : ''}
+    ${st.xl ? xlChip(st.xl) : ''}
+  </li>`).join('')}</ol>`;
+}
 function toast(msg, err = false) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast on' + (err ? ' err' : '');
   clearTimeout(toast._t); toast._t = setTimeout(() => t.className = 'toast', 3800);
@@ -1108,6 +1141,52 @@ SCENES.push({
     const pts = v => (v * 100).toFixed(1) + ' pts';
     const below = desc.mean < P0 ? `<span class="bad">${pts(P0 - desc.mean)} bajo el 85 %</span>` : '<span class="ok">sobre el 85 %</span>';
     const cvTxt = desc.cv < 0.1 ? 'baja (&lt; 10 %): caída <b>sostenida</b>' : desc.cv < 0.3 ? 'moderada' : 'alta';
+    // ---- Procedimientos paso a paso con los datos reales ----
+    const n = desc.m, sx2 = Stats.sorted(x), f3 = v => fmt(v, 3);
+    const freq = []; sx2.forEach(v => { const k = +v.toFixed(6), g = freq.find(q => q.v === k); g ? g.c++ : freq.push({ v: k, c: 1 }); });
+    const few = freq.length <= 6;
+    const ordTxt = few ? freq.map(q => `${f3(q.v)} (${q.c} ${q.c === 1 ? 'vez' : 'veces'})`).join(' · ') : sx2.map(f3).join(', ');
+    const ordStep = { t: 'Ordenar los datos de menor a mayor', r: ordTxt, n: few ? `Posiciones: ${(() => { let a = 0; return freq.map(q => { const r = `x₍${a + 1}₎ a x₍${a + q.c}₎ = ${f3(q.v)}`; a += q.c; return r; }).join(' · '); })()}` : '' };
+    const sumTex = few ? freq.map(q => `${f3(q.v)}\\times${q.c}`).join('+') : sx2.map(f3).join('+');
+    const qSteps = (q, lab, xlf, plain) => {
+      const L = (n - 1) * q + 1, i = Math.floor(L), d = L - i, xi = sx2[i - 1], xj = sx2[Math.min(i, n - 1)], v = xi + d * (xj - xi);
+      return [ordStep,
+        { t: 'Calcular la posición', f: T`L=(n-1)\,q+1=(${n}-1)(${q})+1=${L.toFixed(2)}`, n: `Cae entre la posición ${i} y la ${Math.min(i + 1, n)}.` },
+        { t: 'Interpolar entre esos dos datos', f: T`${lab}=x_{(${i})}+${d.toFixed(2)}\,\big(x_{(${Math.min(i + 1, n)})}-x_{(${i})}\big)=${f3(xi)}+${d.toFixed(2)}(${f3(xj)}-${f3(xi)})=${fmt(v)}`, r: `${plain} = ${fmt(v)}`, xl: xlf }];
+    };
+    const SS = desc.var * (n - 1);
+    const mid = n % 2 ? [(n + 1) / 2] : [n / 2, n / 2 + 1];
+    const P = {
+      'Media': [
+        { t: 'Sumar todas las tasas', f: T`\sum x_i=${sumTex}=${fmt(desc.sum)}` },
+        { t: 'Dividir entre el número de datos', f: T`\bar x=\frac{\sum x_i}{n}=\frac{${fmt(desc.sum)}}{${n}}=${fmt(desc.mean)}`, r: `x̄ = ${fmt(desc.mean)} = ${pct(desc.mean)}`, xl: `=PROMEDIO(${E.rate})` }],
+      'Mediana': [ordStep,
+        { t: `Ubicar el centro (n = ${n}, ${n % 2 ? 'impar' : 'par'})`, f: n % 2 ? T`\text{posición}=\frac{n+1}{2}=${mid[0]}` : T`\text{posiciones }\frac{n}{2}=${mid[0]}\text{ y }\frac{n}{2}+1=${mid[1]}` },
+        { t: n % 2 ? 'Tomar ese dato' : 'Promediar los dos datos centrales', f: n % 2 ? T`Me=x_{(${mid[0]})}=${fmt(desc.median)}` : T`Me=\frac{x_{(${mid[0]})}+x_{(${mid[1]})}}{2}=\frac{${f3(sx2[mid[0] - 1])}+${f3(sx2[mid[1] - 1])}}{2}=${fmt(desc.median)}`, r: `Me = ${fmt(desc.median)}`, xl: `=MEDIANA(${E.rate})` }],
+      'Moda': [
+        { t: 'Contar cuántas veces aparece cada valor', r: few ? freq.map(q => `${f3(q.v)} → ${q.c}`).join(' · ') : `${desc.mode.distinct} valores distintos` },
+        { t: 'Elegir el de mayor frecuencia', r: desc.mode.value !== null ? `Mo = ${fmt(desc.mode.value)} (${desc.mode.count} veces)` : 'Ningún valor se repite → no hay moda', xl: `=MODA.UNO(${E.rate})` }],
+      'Q1': qSteps(0.25, 'Q_1', `=CUARTIL.INC(${E.rate};1)`, 'Q1'),
+      'Q3': qSteps(0.75, 'Q_3', `=CUARTIL.INC(${E.rate};3)`, 'Q3'),
+      'Percentil 95': qSteps(0.95, 'P_{95}', `=PERCENTIL.INC(${E.rate};0,95)`, 'P95'),
+      'Percentil 99': qSteps(0.99, 'P_{99}', `=PERCENTIL.INC(${E.rate};0,99)`, 'P99'),
+      'Mín · Máx': [ordStep,
+        { t: 'Tomar el primero y el último', f: T`x_{min}=x_{(1)}=${f3(desc.min)},\qquad x_{max}=x_{(${n})}=${f3(desc.max)}`, xl: `=MIN(${E.rate})  ·  =MAX(${E.rate})` }],
+      'Rango': [
+        { t: 'Restar mínimo al máximo', f: T`R=x_{max}-x_{min}=${f3(desc.max)}-${f3(desc.min)}=${fmt(desc.range)}`, r: `R = ${fmt(desc.range)} = ${pts(desc.range)}`, xl: `=MAX(${E.rate})-MIN(${E.rate})` }],
+      'Rango intercuartílico': [
+        { t: 'Calcular Q1 y Q3', r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)}`, n: 'Ver el paso a paso de Q1 y Q3 arriba.' },
+        { t: 'Restar', f: T`RIC=Q_3-Q_1=${fmt(desc.q3)}-${fmt(desc.q1)}=${fmt(desc.iqr)}`, xl: `=CUARTIL.INC(${E.rate};3)-CUARTIL.INC(${E.rate};1)` }],
+      'Varianza': [
+        { t: 'Restar la media a cada dato y elevar al cuadrado', f: few ? T`\sum(x_i-\bar x)^2=${freq.map(q => `(${f3(q.v)}-${fmt(desc.mean)})^2\\times${q.c}`).join('+')}` : T`\sum(x_i-\bar x)^2`, r: `Σ(xᵢ − x̄)² = ${fmt(SS, 6)}` },
+        { t: 'Dividir entre n − 1 (varianza muestral)', f: T`s^2=\frac{\sum(x_i-\bar x)^2}{n-1}=\frac{${fmt(SS, 6)}}{${n - 1}}=${fmt(desc.var, 6)}`, r: `s² = ${fmt(desc.var, 6)}`, xl: `=VAR.S(${E.rate})` }],
+      'Desv. estándar': [
+        { t: 'Partir de la varianza', r: `s² = ${fmt(desc.var, 6)}` },
+        { t: 'Sacar raíz cuadrada', f: T`s=\sqrt{s^2}=\sqrt{${fmt(desc.var, 6)}}=${fmt(desc.sd, 4)}`, r: `s = ${fmt(desc.sd, 4)} → ± ${pts(desc.sd)}`, xl: `=DESVEST.M(${E.rate})` }],
+      'Coef. variación': [
+        { t: 'Dividir la desviación entre la media', f: T`CV=\frac{s}{\bar x}\times100\%=\frac{${fmt(desc.sd, 4)}}{${fmt(desc.mean, 4)}}\times100\%=${(desc.cv * 100).toFixed(2)}\%`, xl: `=DESVEST.M(${E.rate})/PROMEDIO(${E.rate})` },
+        { t: 'Interpretar', r: `${pct(desc.cv, 1)} → variación ${desc.cv < 0.1 ? 'baja' : desc.cv < 0.3 ? 'moderada' : 'alta'}`, n: 'Referencia: CV < 10 % baja · 10–30 % moderada · > 30 % alta.' }]
+    };
     // [grupo, medida, símbolo, valor, qué representa, cómo se lee en el caso]
     const rows = [
       ['Tendencia central', 'Media', T`\bar x`, desc.mean, 'Promedio de todas las tasas', `Tasa típica ${pct(desc.mean)}: ${below}`],
@@ -1135,7 +1214,7 @@ SCENES.push({
           <div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%">${band}${p85}<line x1="${pad - 10}" x2="${W - pad + 10}" y1="${base}" y2="${base}" stroke="#93a0b4" stroke-width="2"/>${ticks}${dots}${mk}</svg></div>
           <div class="card"><div class="tbl-wrap" style="max-height:none"><table class="mtc">
             <thead><tr><th>Medida</th><th>Valor</th><th style="text-align:left">¿Qué representa?</th><th style="text-align:left">¿Cómo se lee aquí?</th></tr></thead>
-            <tbody>${rows.map(([g, n, s, v, what, read], i) => `${g ? `<tr><td colspan="4" style="background:#141b27;color:var(--orange);font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase">${g}</td></tr>` : ''}<tr class="rv" style="--d:${(0.1 + i * 0.05).toFixed(2)}s"><td><b>${n}</b><br>${tex(s)}</td><td class="mono">${val(n, v)}</td><td class="what">${what}</td><td class="read">${read}</td></tr>`).join('')}</tbody>
+            <tbody>${rows.map(([g, nm, s, v, what, read], i) => `${g ? `<tr><td colspan="4" style="background:#141b27;color:var(--orange);font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase">${g}</td></tr>` : ''}<tr class="rv" style="--d:${(0.1 + i * 0.05).toFixed(2)}s"><td><b>${nm}</b><br>${tex(s)}${P[nm] ? procBtn('pm' + i) : ''}</td><td class="mono">${val(nm, v)}</td><td class="what">${what}</td><td class="read">${read}</td></tr>${P[nm] ? `<tr class="proc" id="pm${i}"><td colspan="4">${procHTML(P[nm])}</td></tr>` : ''}`).join('')}</tbody>
           </table></div></div>
         </div>
         <div class="stack">
@@ -1242,6 +1321,21 @@ SCENES.push({
       ['5 · Percentiles vs normal', pctl.map(p => `P${p.q} ≈ x̄ + ${p.z}s = ${fmt(p.exp, 3)}`).join('<br>'), pctl.map(p => `P${p.q} = ${fmt(p.obs, 3)}`).join('<br>'), norm.pctlOk]
     ];
     const nOk = crit.filter(c => c[3]).length;
+    const tol = sym.tol;
+    const CP = [
+      [{ t: 'Contar los valores distintos de la tasa', r: `${norm.distinct} valores distintos: ${valores.join(', ')}` },
+       { t: 'Construir el histograma (escena 5)', r: `${hist.k} clases · clase modal con ${hist.modal.f} datos` },
+       { t: 'Comparar con la campana', r: norm.shapeOk ? 'Las barras siguen la forma de campana' : 'Barras separadas, sin centro alto ni colas: no hay campana', n: 'Una normal es continua: muchos valores, la mayoría cerca de la media y pocos en los extremos.' }],
+      [{ t: 'Calcular las tres medidas (escena 4)', r: `x̄ = ${fmt(desc.mean)} · Me = ${fmt(sym.median)} · Mo = ${fmt(sym.mode)}` },
+       { t: 'Medir la distancia entre la media y las otras dos', f: T`|\bar x-Me|=|${fmt(desc.mean)}-${fmt(sym.median)}|=${fmt(sym.dMedian)},\quad |\bar x-Mo|=${fmt(sym.dMode)}` },
+       { t: 'Comparar con la tolerancia s/4', f: T`\frac{s}{4}=\frac{${fmt(desc.sd)}}{4}=${fmt(tol)}`, r: sym.ok ? 'Ambas distancias ≤ s/4 → coinciden ✔' : `${fmt(Math.max(sym.dMedian, sym.dMode))} > ${fmt(tol)} → no coinciden ✘` }],
+      [{ t: 'Aplicar la fórmula de Pearson', f: T`Sk=\frac{3(\bar x-Me)}{s}=\frac{3(${fmt(desc.mean)}-${fmt(desc.median)})}{${fmt(desc.sd)}}=${fmt(desc.skew, 3)}`, xl: `=3*(PROMEDIO(${E.rate})-MEDIANA(${E.rate}))/DESVEST.M(${E.rate})` },
+       { t: 'Interpretar el signo y el tamaño', r: `Sk = ${fmt(desc.skew, 2)} → ${skTxt}`, n: 'Sk ≈ 0 simétrica · Sk < 0 cola a la izquierda (media < mediana) · Sk > 0 cola a la derecha. Se acepta |Sk| < 0.5.' }],
+      [...emp.map(e => ({ t: `Intervalo x̄ ± ${e.k}s`, f: T`${fmt(desc.mean)}\pm${e.k}(${fmt(desc.sd)})=[${fmt(e.lo)},\;${fmt(e.hi)}]`, r: `${e.count} de ${desc.m} datos → ${pct(e.pct)} (esperado ${(e.expected * 100).toFixed(1)} %) ${e.ok ? '✔' : '✘'}` })),
+       { t: 'Conclusión', r: norm.empOk ? 'Los tres porcentajes se acercan a los teóricos ✔' : 'Al menos un porcentaje se aleja del teórico ✘', n: 'Tolerancia: 10, 5 y 3 puntos porcentuales.' }],
+      [...pctl.map(p => ({ t: `P${p.q} esperado si fuera normal`, f: T`P_{${p.q}}=\bar x+${p.z}\,s=${fmt(desc.mean)}+${p.z}(${fmt(desc.sd)})=${fmt(p.exp)}`, r: `Observado: P${p.q} = ${fmt(p.obs)} · diferencia ${fmt(Math.abs(p.obs - p.exp))} ${p.ok ? '≤' : '>'} s/4 = ${fmt(tol)} ${p.ok ? '✔' : '✘'}` })),
+       { t: 'Interpretar', r: norm.pctlOk ? 'Los percentiles coinciden con la normal ✔' : 'Los percentiles reales quedan por debajo: los datos no tienen la cola derecha de una normal ✘', n: '1.645 y 2.326 son los z de la tabla que dejan 95 % y 99 % del área a la izquierda.' }]
+    ];
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 6 · ¿La muestra es normal?</div>
@@ -1260,7 +1354,7 @@ SCENES.push({
           <div class="card"><h3><span class="tag">CRITERIOS</span> ${nOk} de ${crit.length} se cumplen</h3>
             <div class="tbl-wrap" style="max-height:none"><table class="mtc">
               <thead><tr><th>Criterio</th><th style="text-align:left">Si fuera normal</th><th style="text-align:left">Observado</th><th></th></tr></thead>
-              <tbody>${crit.map(([n, e, o, ok], i) => `<tr class="rv" style="--d:${(0.2 + i * 0.25).toFixed(2)}s"><td style="text-align:left"><b>${n}</b></td><td class="what">${e}</td><td class="read mono">${o}</td><td style="text-align:center">${mark(ok)}</td></tr>`).join('')}</tbody>
+              <tbody>${crit.map(([n, e, o, ok], i) => `<tr class="rv" style="--d:${(0.2 + i * 0.25).toFixed(2)}s"><td style="text-align:left"><b>${n}</b>${procBtn('pn' + i)}</td><td class="what">${e}</td><td class="read mono">${o}</td><td style="text-align:center">${mark(ok)}</td></tr><tr class="proc" id="pn${i}"><td colspan="4">${procHTML(CP[i])}</td></tr>`).join('')}</tbody>
             </table></div>
           </div>
           <div class="verdict ${verdict ? 'yes' : 'no'} rv" style="--d:1.6s"><span class="ico">${verdict ? '✔' : '✘'}</span><span>${verdict ? 'Se puede asumir normalidad' : 'No se puede asumir normalidad'}</span></div>
@@ -1390,7 +1484,7 @@ SCENES.push({
       <h1>¿Fue azar del muestreo o una caída real?</h1>
       <div class="grid2">
         <div class="stack" style="align-self:stretch">
-          <div class="card sticky" style="top:0">
+          <div class="card">
             <h3><span class="tag">N(0,1)</span> Distribución del estadístico si H₀ es cierta</h3>
             <div id="curve"></div>
             <div class="muted small">Naranja: región de rechazo con α = 0.05 · rojo: con α = 0.01 · rayado azul: área del valor p.</div>
