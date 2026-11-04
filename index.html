@@ -7,6 +7,7 @@
 <!--
   Trabajo final de Estadística · Ingeniería de Sistemas · Universidad Católica Luis Amigó
   Caso 4: Colapso de Fastly y el apagón de The New York Times / Reddit.
+  Integrantes: Mariana Aguilar, Giany Salazar, Carlos Palacios, Marshall Robinson, Juan Manuel Restrepo.
   Archivo autocontenido: abrir directamente en el navegador (requiere internet solo para las librerías CDN).
   Librerías: Chart.js (gráficas) y KaTeX (fórmulas). Los datos de Caso4.xlsx van incrustados.
 -->
@@ -80,6 +81,20 @@ main{overflow:auto;padding:22px clamp(16px,3vw,40px) 40px}
 .tile .x{font:400 12px var(--mono);color:var(--dim);margin-top:4px;word-break:break-all}
 .ok{color:var(--green)} .bad{color:var(--red)} .hl{color:var(--orange)} .am{color:var(--amber)}
 .pill{display:inline-block;font:600 13px var(--mono);padding:2px 9px;border-radius:999px;border:1px solid currentColor}
+/* Puntos clave: listas cortas, una idea por línea */
+ul.keys{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+ul.keys li{position:relative;padding-left:20px;line-height:1.4}
+ul.keys li::before{content:'';position:absolute;left:2px;top:.55em;width:8px;height:8px;border-radius:2px;background:var(--orange)}
+ul.keys li b{color:#fff}
+.team{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.team span{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:600;font-size:15px}
+.qa{display:grid;grid-template-columns:1fr;gap:10px}
+.qa div{border-left:3px solid var(--line2);padding:2px 0 2px 12px}
+.qa .q{font-weight:700;color:var(--amber);font-size:15px}
+.qa .a{font-size:15px}
+table.mtc td{white-space:normal;vertical-align:top}
+table.mtc td.what{text-align:left;color:var(--muted);font-size:14px}
+table.mtc td.read{text-align:left;font-size:14px}
 
 /* ---------- Panel ¿Cómo se hizo? ---------- */
 details.how{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
@@ -462,9 +477,12 @@ function compute(D) {
     m, mean, median: S.median(x), mode, min: mn, max: mx, range: mx - mn,
     var: S.varS(x), sd, cv: sd / mean,
     q1: S.quantileInc(x, .25), q2: S.quantileInc(x, .5), q3: S.quantileInc(x, .75),
+    p95: S.quantileInc(x, .95), p99: S.quantileInc(x, .99),
     sum: S.sum(x)
   };
   desc.iqr = desc.q3 - desc.q1;
+  // Coeficiente de asimetría de Pearson: Sk = 3(x̄ − Me)/s  (0 = simétrica)
+  desc.skew = sd > 0 ? 3 * (mean - desc.median) / sd : 0;
 
   // ---- 3.3 Tabla de frecuencias (regla de Sturges) ----
   const kRaw = 1 + 3.322 * Math.log10(m);
@@ -495,8 +513,17 @@ function compute(D) {
   const sym = { median: desc.median, mode: center, modeIsClass: mode.value === null, tol: symTol,
     dMedian: Math.abs(mean - desc.median), dMode: Math.abs(mean - center) };
   sym.ok = sym.dMedian <= symTol && sym.dMode <= symTol;
-  const isNormal = sym.ok && empOk;
-  const norm = { emp, empOk, sym, isNormal, distinct: mode.distinct };
+  // Asimetría de Pearson: se acepta |Sk| < 0.5 como aproximadamente simétrica
+  const skewOk = Math.abs(desc.skew) < 0.5;
+  // Percentiles: en una normal P95 = x̄ + 1.645·s y P99 = x̄ + 2.326·s
+  const pctl = [{ q: 95, z: 1.645, obs: desc.p95 }, { q: 99, z: 2.326, obs: desc.p99 }].map(p => {
+    const exp = mean + p.z * sd;
+    return { ...p, exp, ok: Math.abs(p.obs - exp) <= symTol };
+  });
+  const pctlOk = pctl.every(p => p.ok);
+  const shapeOk = mode.distinct > 3;
+  const isNormal = sym.ok && empOk && skewOk && pctlOk && shapeOk;
+  const norm = { emp, empOk, sym, skewOk, pctl, pctlOk, shapeOk, isNormal, distinct: mode.distinct };
 
   // ---- 3.5 Proporción muestral ----
   let prop, propAlt = null;
@@ -708,6 +735,7 @@ function normalCurveSVG({ z, alphas = [0.05, 0.01], W = 680, H = 300, showP = tr
    arranca las animaciones (registradas en Life para liberarlas).
    ===================================================================== */
 const SCENES = [];
+const TEAM = ['Mariana Aguilar', 'Giany Salazar', 'Carlos Palacios', 'Marshall Robinson', 'Juan Manuel Restrepo'];
 
 /* ---------------- Escena 1 · Portada y el caso ---------------- */
 SCENES.push({
@@ -716,14 +744,21 @@ SCENES.push({
     const { prop, test } = R;
     el.innerHTML = `
     <section class="scene">
-      <div class="kicker">Caso 4 · Postmortem de incidente</div>
+      <div class="kicker">Caso 4 · Estadística · Universidad Católica Luis Amigó</div>
       <h1>Colapso de Fastly: ¿se sostuvo el 85 % de aciertos en caché?</h1>
-      <p class="lead">Un fallo en la CDN de Fastly dejó fuera de línea cerca del 10 % de Internet durante una hora. Al volver el servicio, The New York Times y Reddit acusaron a Fastly: si la tasa de aciertos en caché cae por debajo del 85 % del contrato, las peticiones atraviesan la CDN, golpean los servidores origen y tumban sus bases de datos.</p>
       <div class="grid2">
         <div class="stack">
           <div class="alert-banner"><span class="pulse">●</span> ALERTA · HIT RATE &lt; 85 % · ORIGIN DB SATURADA</div>
           <div class="card" style="padding:10px"><div class="canvas-wrap"><canvas id="cdn" height="380"></canvas></div>
-            <div class="muted small" style="padding:6px 6px 0">Cada partícula es una petición real del archivo (en orden de <code>Request_ID</code>). <span class="ok">Verde</span>: hit, la CDN responde desde caché. <span class="bad">Rojo</span>: miss, la petición viaja hasta el origen y aumenta su carga.</div>
+            <div class="muted small" style="padding:6px 6px 0">Cada punto es una petición del archivo: <span class="ok">verde = hit</span> (responde la caché) · <span class="bad">rojo = miss</span> (va al origen).</div>
+          </div>
+          <div class="card">
+            <h3><span class="tag">EL CASO</span></h3>
+            <ul class="keys">
+              <li>Fallo en la CDN de Fastly: <b>~10 % de Internet</b> caído durante <b>1 hora</b>.</li>
+              <li>NYT y Reddit: la tasa de aciertos cayó por debajo del <b>85 %</b> del contrato.</li>
+              <li>Menos aciertos → más peticiones al origen → <b>bases de datos caídas</b>.</li>
+            </ul>
           </div>
         </div>
         <div class="stack">
@@ -736,14 +771,14 @@ SCENES.push({
           <div class="card">
             <h3><span class="tag">JUICIO</span> Las dos hipótesis</h3>
             <div class="hyp">
-              <span class="h ok">${tex(T`H_0: p \ge 0.85`)}</span><span>A favor de <b>Fastly</b>: el 85 % se sostuvo y los periódicos colapsaron por la mala configuración de sus propios balanceadores.</span>
-              <span class="h bad">${tex(T`H_1: p < 0.85`)}</span><span>A favor de <b>NYT/Reddit</b>: la caché falló. Si se rechaza H₀, Fastly paga los costos.</span>
+              <span class="h ok">${tex(T`H_0: p \ge 0.85`)}</span><span><b>Fastly</b>: el 85 % se sostuvo.</span>
+              <span class="h bad">${tex(T`H_1: p < 0.85`)}</span><span><b>NYT/Reddit</b>: la tasa cayó.</span>
             </div>
-            <p class="muted small" style="margin:.8em 0 0">Prueba de proporción unilateral a la izquierda · α = 0.05 (principal) y α = 0.01 (comparación).</p>
+            <p class="muted small" style="margin:.8em 0 0">Proporción · unilateral izquierda · α = 0.05</p>
           </div>
-          <div class="card meaning">
-            <h3>¿Qué significa?</h3>
-            <p>La <b>tasa de aciertos</b> es la fracción de peticiones que la CDN responde sin molestar al origen. Con 85 %, solo 15 de cada 100 llegan al servidor del periódico. Si la tasa baja, esa carga se multiplica y la base de datos colapsa. La estadística decidirá quién tiene la razón.</p>
+          <div class="card">
+            <h3><span class="tag">INTEGRANTES</span></h3>
+            <div class="team">${TEAM.map(n => `<span>${n}</span>`).join('')}</div>
           </div>
           ${how([
             { t: 'Tasa de aciertos (proporción muestral)', f: T`\hat p=\frac{\text{hits}}{\text{peticiones}}`, s: T`\hat p=\frac{${prop.hits ?? '\\text{—}'}}{${prop.n}}=${fmt(prop.phat)}`, r: `p̂ = ${fmt(prop.phat)} (${pct(prop.phat)}) frente al contrato de 85 %`, xl: '=' + R.E.phatExpr },
@@ -866,31 +901,37 @@ SCENES.push({
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 2 · Población, muestra y estimadores</div>
-      <h1>No podemos revisar millones de peticiones: tomamos una muestra</h1>
-      <p class="lead">La <b>población</b> son todas las peticiones que los POP de Fastly sirvieron a NYT y Reddit tras restablecer el servicio (millones por minuto). La <b>muestra</b> es lo que trae el archivo: ${tipo}. Con ella <b>estimamos</b> la tasa real <i>p</i> de la población.</p>
+      <h1>De la población a la muestra</h1>
+      <ul class="keys" style="margin-bottom:18px;max-width:980px">
+        <li><b>Población:</b> todas las peticiones que Fastly sirvió a NYT y Reddit tras el fallo (millones).</li>
+        <li><b>Muestra:</b> ${tipo}.</li>
+        <li><b>Objetivo:</b> estimar la tasa real <i>p</i> con la muestra.</li>
+      </ul>
       <div class="grid2">
         <div class="stack">
           <div class="card">
             <h3><span class="tag">POBLACIÓN</span> cada punto gris representa miles de peticiones</h3>
             <svg viewBox="0 0 ${cols * 14 + 6} ${rows * 14 + 6}" width="100%">${dots}</svg>
-            <div class="muted small">Bloque resaltado = la muestra, en el orden en que llegó: <span class="ok">● hit</span> <span class="bad">● miss</span>${isReq ? '' : ' (verde: intervalo con tasa ≥ 85 %)'}.${nShow < (isReq ? D.seq.length : R.groups.length) ? ` Se dibujan las primeras ${nShow}.` : ''}</div>
+            <div class="muted small">Bloque resaltado = la muestra: <span class="ok">● hit</span> <span class="bad">● miss</span>${isReq ? '' : ' (verde: intervalo con tasa ≥ 85 %)'}.${nShow < (isReq ? D.seq.length : R.groups.length) ? ` Se dibujan las primeras ${nShow}.` : ''}</div>
           </div>
           <div class="card">
             <h3><span class="tag">TIPOS DE MUESTREO</span> ¿cuál aplica?</h3>
             <table class="small">
-              <thead><tr><th>Tipo</th><th style="text-align:left">Cómo sería en este caso</th><th>¿Aplica?</th></tr></thead>
+              <thead><tr><th>Tipo</th><th style="text-align:left">En este caso</th><th>¿Aplica?</th></tr></thead>
               <tbody>
-                <tr><td>Aleatorio simple</td><td style="text-align:left;white-space:normal">Elegir peticiones al azar de los logs de toda la hora</td><td class="am">ideal</td></tr>
-                <tr><td>Sistemático</td><td style="text-align:left;white-space:normal">Tomar una de cada <i>k</i> peticiones del log, o un bloque consecutivo</td><td class="hl"><b>✔ el de los datos</b></td></tr>
-                <tr><td>Estratificado</td><td style="text-align:left;white-space:normal">Muestrear por POP/región o por medio (NYT, Reddit)</td><td class="muted">recomendado</td></tr>
-                <tr><td>Por conglomerados</td><td style="text-align:left;white-space:normal">Tomar minutos o servidores completos (los <i>lotes</i> de la escena 3)</td><td class="muted">para la tasa por lote</td></tr>
+                <tr><td>Aleatorio simple</td><td style="text-align:left;white-space:normal">Peticiones al azar de toda la hora</td><td class="am">ideal</td></tr>
+                <tr><td>Sistemático</td><td style="text-align:left;white-space:normal">Bloque consecutivo de Request_ID</td><td class="hl"><b>✔ el usado</b></td></tr>
+                <tr><td>Estratificado</td><td style="text-align:left;white-space:normal">Por región o por medio (NYT, Reddit)</td><td class="muted">recomendado</td></tr>
+                <tr><td>Conglomerados</td><td style="text-align:left;white-space:normal">Lotes de peticiones consecutivas</td><td class="muted">tasa por lote</td></tr>
               </tbody>
             </table>
-            <p class="small muted" style="margin:.6em 0 0">Los registros vienen en un bloque continuo de Request_ID: es un <b>muestreo sistemático en el tiempo</b> (por conveniencia, lo que capturó el log). Para la tasa por lote se forman <b>conglomerados</b> de peticiones consecutivas.</p>
           </div>
         </div>
         <div class="stack">
-          ${periodic ? `<div class="card warn"><h3>⚠ Patrón detectado en la muestra</h3><p class="small" style="margin:0">Los ${periodic.count} misses aparecen <b>exactamente cada ${periodic.gap} peticiones</b> (posiciones ${periodic.first}, ${periodic.first + periodic.gap}, ${periodic.first + 2 * periodic.gap}, …, ${periodic.last}). Una muestra aleatoria real no se ve así. Es el riesgo clásico del muestreo sistemático: si el periodo de la muestra coincide con un ciclo de los datos, la muestra puede no representar a la población. Lo tendremos en cuenta en la escena de normalidad.</p></div>` : ''}
+          ${periodic ? `<div class="card warn"><h3>⚠ Patrón en la muestra</h3><ul class="keys small">
+            <li>Los ${periodic.count} misses caen <b>exactamente cada ${periodic.gap} peticiones</b> (${periodic.first}, ${periodic.first + periodic.gap}, ${periodic.first + 2 * periodic.gap}, …).</li>
+            <li>Una muestra aleatoria no se vería así: es el riesgo del muestreo sistemático.</li>
+          </ul></div>` : ''}
           <div class="card">
             <h3><span class="tag">ESTIMADORES PUNTUALES</span></h3>
             <table>
@@ -903,12 +944,14 @@ SCENES.push({
             </table>
           </div>
           <div class="card">
-            <h3><span class="tag">VARIABLE ALEATORIA</span> de Bernoulli a binomial</h3>
-            <p class="small" style="margin:0 0 .4em">Cada petición es una variable ${tex(T`X_i`)} que vale 1 (hit) o 0 (miss). El número total de hits en <i>n</i> peticiones independientes sigue una distribución <b>binomial</b>:</p>
-            ${tex(T`X=\sum_{i=1}^{n}X_i \sim B(n,p),\qquad P(X=x)=\binom{n}{x}p^{x}(1-p)^{n-x}`, true)}
-            ${binom ? `<p class="small" style="margin:.2em 0 0">Si Fastly cumple (p = 0.85): ${tex(T`\mu=np_0=${fmt(binom.mu, 1)}`)}, ${tex(T`\sigma=\sqrt{np_0(1-p_0)}=${fmt(binom.sigma, 3)}`)}. Observamos <b>${int(binom.x)}</b> hits.</p>` : ''}
+            <h3><span class="tag">VARIABLE ALEATORIA</span> Bernoulli → binomial</h3>
+            <ul class="keys small" style="margin-bottom:.4em">
+              <li>Cada petición: ${tex(T`X_i`)} = 1 (hit) o 0 (miss).</li>
+              <li>Total de hits: ${tex(T`X\sim B(n,p)`)}</li>
+              ${binom ? `<li>Si Fastly cumple: ${tex(T`\mu=${fmt(binom.mu, 1)}`)} hits esperados · observados: <b>${int(binom.x)}</b>.</li>` : ''}
+            </ul>
           </div>
-          <div class="card meaning"><h3>¿Qué significa?</h3><p>No conocemos la tasa real <i>p</i> de toda la hora, pero la muestra la estima con <b>p̄ = ${fmt(prop.phat)}</b>. La pregunta de las siguientes escenas es si esa diferencia con 0.85 puede deberse al azar del muestreo o si es una caída real.</p></div>
+          <div class="card meaning"><h3>¿Qué significa?</h3><p>La muestra estima <b>p̄ = ${fmt(prop.phat)}</b>. ¿La diferencia con 0.85 es azar o una caída real?</p></div>
           ${how([
             { t: 'Proporción muestral', f: T`\bar p=\frac{x}{n}`, s: prop.hits !== null ? T`\bar p=\frac{${prop.hits}}{${prop.n}}` : '', r: `p̄ = ${fmt(prop.phat)}`, xl: '=' + R.E.phatExpr },
             { t: 'Media muestral de la tasa', f: T`\bar x=\frac{\sum x_i}{n}`, s: T`\bar x=\frac{${fmt(desc.sum)}}{${desc.m}}`, r: `x̄ = ${fmt(desc.mean)}`, xl: `=PROMEDIO(${R.E.rate})`, note: R.E.howRate },
@@ -933,7 +976,7 @@ SCENES.push({
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 3 · Conjunto de datos</div>
-      <h1>${D.file} <span class="muted" style="font-weight:500;font-size:.6em">· hoja «${D.sheet}»</span></h1>
+      <h1>${D.file}</h1>
       <div class="tiles" style="margin-bottom:18px">
         <div class="tile rv" style="--d:.05s"><div class="l">Registros</div><div class="v">${int(D.rows.length)}</div></div>
         <div class="tile rv" style="--d:.15s"><div class="l">Columnas</div><div class="v">${D.cols.length}</div><div class="x">${D.cols.join(' · ')}</div></div>
@@ -956,12 +999,16 @@ SCENES.push({
             <p class="small muted" style="margin:.4em 0 0">${D.mode === 'requests' ? `Columna de aciertos: <b>${D.hitCol.name}</b> (columna ${D.hitCol.letter}).` : D.mode === 'intervals' ? `Peticiones: <b>${D.reqCol.name}</b> · Hits: <b>${D.hitsCol.name}</b>.` : `Tasa: <b>${D.rateCol.name}</b>${D.scale === 100 ? ' (en %, se divide entre 100)' : ''}.`}</p></div>
           ${D.mode === 'requests' ? `<div class="card warn">
             <h3>¿Por qué agrupar?</h3>
-            <p class="small" style="margin:0 0 .6em">Cada fila es 0 o 1. Una variable 0/1 solo tiene dos barras posibles: <b>nunca</b> forma una campana. Para estudiar la tasa como variable <b>continua</b> (MTC, histograma, normalidad e IC de la media) se agrupan las peticiones ${D.groupCol ? `por <b>${D.groupCol.name}</b>` : 'en <b>lotes consecutivos</b>'} y se calcula la tasa de cada grupo. La prueba de proporción usa directamente los ${int(prop.n)} ceros y unos.</p>
+            <ul class="keys small" style="margin-bottom:.6em">
+              <li>Una variable 0/1 solo tiene 2 barras: <b>nunca</b> forma campana.</li>
+              <li>Se agrupa ${D.groupCol ? `por <b>${D.groupCol.name}</b>` : 'en <b>lotes consecutivos</b>'} → tasa por lote (variable continua para MTC, histograma y normalidad).</li>
+              <li>La prueba de proporción usa los ${int(prop.n)} ceros y unos directamente.</li>
+            </ul>
             ${canGroup ? `<label class="small" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Peticiones por lote:
               <select id="gs">${[5, 10, 20, 25, 50, 100].filter(g => D.seq.length / g >= 4).map(g => `<option ${g === groupSize ? 'selected' : ''}>${g}</option>`).join('')}</select>
               <span class="muted">→ ${groups.length} lotes</span></label>` : ''}
           </div>` : ''}
-          <div class="card meaning"><h3>¿Qué significa?</h3><p>${D.mode === 'requests' ? `Hay ${int(prop.n)} peticiones observadas y ${int(prop.n - prop.hits)} fueron a parar al origen (miss). Agrupadas, forman <b>${groups.length} tasas</b> que analizaremos como variable continua.` : `Hay ${groups.length} intervalos con su tasa de aciertos.`}</p></div>
+          <div class="card meaning"><h3>¿Qué significa?</h3><p>${D.mode === 'requests' ? `${int(prop.n)} peticiones · ${int(prop.n - prop.hits)} misses al origen · <b>${groups.length} tasas por lote</b>.` : `${groups.length} intervalos con su tasa de aciertos.`}</p></div>
           ${how([
             { t: 'Número de observaciones', r: `n = ${int(prop.n)}`, xl: '=' + E.nExpr },
             ...(prop.hits !== null ? [{ t: 'Total de hits', r: `x = ${int(prop.hits)}`, xl: '=' + E.hitsExpr }] : []),
@@ -1009,9 +1056,9 @@ SCENES.push({
 SCENES.push({
   title: 'MTC',
   render(el) {
-    const { desc, E, x } = R;
+    const { desc, E, x, norm } = R;
     // Recta numérica: puntos apilados (dot plot) y marcadores
-    const W = 760, H = 330, pad = 50;
+    const W = 760, H = 360, pad = 50;
     // El eje incluye el 0.85 del contrato si está razonablemente cerca de los datos
     let lo = Math.min(desc.min, desc.mean - desc.sd), hi = Math.max(desc.max, desc.mean + desc.sd);
     if (P0 > hi && P0 - hi < 3 * ((hi - lo) || 0.05)) hi = P0;
@@ -1033,7 +1080,7 @@ SCENES.push({
     const t0 = Math.min(x.length, 60) * 0.035 + 0.3;
     const raw = [
       ['Mín', desc.min], ['Q1', desc.q1], ['Mediana', desc.median], ['Moda', desc.mode.value],
-      ['Media x̄', desc.mean], ['Q3', desc.q3], ['Máx', desc.max]
+      ['Media x̄', desc.mean], ['Q3', desc.q3], ['P95', desc.p95], ['P99', desc.p99], ['Máx', desc.max]
     ].filter(m => m[1] !== null);
     // Medidas con el mismo valor se agrupan en una sola etiqueta (p. ej. "Mediana = Q3 = Máx")
     const marks = [];
@@ -1044,8 +1091,11 @@ SCENES.push({
       const isMean = m.labs.includes('Media x̄'), col = isMean ? '#ff7a1a' : m.labs.includes('Mediana') ? '#2fe0a0' : m.labs.includes('Moda') ? '#ffc247' : '#a98bff';
       const lvl = i % 3, y2 = base + 28 + lvl * 30;
       const anchor = sx(m.v) < 140 ? 'start' : sx(m.v) > W - 140 ? 'end' : 'middle';
+      // Etiquetas largas (varias medidas iguales) se parten en líneas de 3
+      const lines = []; for (let j = 0; j < m.labs.length; j += 3) lines.push(m.labs.slice(j, j + 3).join(' = '));
+      lines[lines.length - 1] += ` ${fmt(m.v, 3)}`;
       mk += `<g class="rv" style="--d:${(t0 + i * 0.5).toFixed(2)}s"><line x1="${sx(m.v)}" x2="${sx(m.v)}" y1="${base - 4}" y2="${y2 - 14}" stroke="${col}" stroke-width="2"/>
-        <text x="${sx(m.v)}" y="${y2}" fill="${col}" font-size="14" font-weight="700" text-anchor="${anchor}">${m.labs.join(' = ')} ${fmt(m.v, 3)}</text></g>`;
+        <text x="${sx(m.v)}" y="${y2}" fill="${col}" font-size="14" font-weight="700" text-anchor="${anchor}">${lines.map((l, j) => `<tspan x="${sx(m.v)}" dy="${j ? 17 : 0}">${l}${j < lines.length - 1 ? ' =' : ''}</tspan>`).join('')}</text></g>`;
     });
     const tS = t0 + marks.length * 0.5 + 0.2;
     const band = `<g class="rv" style="--d:${tS}s"><rect x="${sx(desc.mean - desc.sd)}" y="${base - 150}" width="${sx(desc.mean + desc.sd) - sx(desc.mean - desc.sd)}" height="150" fill="#ff7a1a" opacity=".08"/>
@@ -1054,38 +1104,49 @@ SCENES.push({
     let ticks = '';
     for (let i = 0; i <= 6; i++) { const v = a + (b - a) * i / 6; ticks += `<line x1="${sx(v)}" x2="${sx(v)}" y1="${base}" y2="${base + 6}" stroke="#647086"/><text x="${sx(v)}" y="${H - 6}" fill="#647086" font-size="12" text-anchor="middle">${v.toFixed(3)}</text>`; }
     const p85 = 0.85 >= a && 0.85 <= b ? `<g class="rv" style="--d:${tS + .4}s"><line x1="${sx(.85)}" x2="${sx(.85)}" y1="20" y2="${base}" stroke="#ff3d4a" stroke-dasharray="6 5" stroke-width="2"/><text x="${sx(.85)}" y="16" fill="#ff3d4a" font-size="13" text-anchor="middle" font-weight="700">contrato 0.85</text></g>` : '';
+    const u = R.D.mode === 'requests' ? 'lotes' : 'intervalos', u1 = u.slice(0, -1);
+    const pts = v => (v * 100).toFixed(1) + ' pts';
+    const below = desc.mean < P0 ? `<span class="bad">${pts(P0 - desc.mean)} bajo el 85 %</span>` : '<span class="ok">sobre el 85 %</span>';
+    const cvTxt = desc.cv < 0.1 ? 'baja (&lt; 10 %): caída <b>sostenida</b>' : desc.cv < 0.3 ? 'moderada' : 'alta';
+    // [grupo, medida, símbolo, valor, qué representa, cómo se lee en el caso]
     const rows = [
-      ['Media', T`\bar x`, desc.mean, `=PROMEDIO(${E.rate})`],
-      ['Mediana', T`Me`, desc.median, `=MEDIANA(${E.rate})`],
-      ['Moda', T`Mo`, desc.mode.value, `=MODA.UNO(${E.rate})`],
-      ['Mínimo', T`x_{min}`, desc.min, `=MIN(${E.rate})`],
-      ['Máximo', T`x_{max}`, desc.max, `=MAX(${E.rate})`],
-      ['Rango', T`R`, desc.range, `=MAX(${E.rate})-MIN(${E.rate})`],
-      ['Q1', T`Q_1`, desc.q1, `=CUARTIL.INC(${E.rate};1)`],
-      ['Q2', T`Q_2`, desc.q2, `=CUARTIL.INC(${E.rate};2)`],
-      ['Q3', T`Q_3`, desc.q3, `=CUARTIL.INC(${E.rate};3)`],
-      ['Varianza', T`s^2`, desc.var, `=VAR.S(${E.rate})`],
-      ['Desv. estándar', T`s`, desc.sd, `=DESVEST.M(${E.rate})`],
-      ['Coef. variación', T`CV`, desc.cv, `=DESVEST.M(${E.rate})/PROMEDIO(${E.rate})`]
+      ['Tendencia central', 'Media', T`\bar x`, desc.mean, 'Promedio de todas las tasas', `Tasa típica ${pct(desc.mean)}: ${below}`],
+      [null, 'Mediana', T`Me`, desc.median, 'Valor del centro: deja 50 % a cada lado', `La mitad de los ${u} tuvo ≤ ${pct(desc.median)}`],
+      [null, 'Moda', T`Mo`, desc.mode.value, 'Valor que más se repite', desc.mode.value !== null ? `${pct(desc.mode.value)} aparece ${desc.mode.count} de ${desc.m} veces` : 'Ningún valor se repite'],
+      ['Posición', 'Q1', T`Q_1`, desc.q1, '25 % de los datos queda por debajo', `El 25 % peor de los ${u} tuvo ≤ ${pct(desc.q1)}`],
+      [null, 'Q3', T`Q_3`, desc.q3, '75 % de los datos queda por debajo', `El 75 % de los ${u} tuvo ≤ ${pct(desc.q3)}`],
+      [null, 'Percentil 95', T`P_{95}`, desc.p95, '95 % de los datos queda por debajo', `95 % de los ${u} ≤ ${pct(desc.p95)}${desc.p95 < P0 ? ' → <span class="bad">no llega al 85 %</span>' : ''}`],
+      [null, 'Percentil 99', T`P_{99}`, desc.p99, '99 % de los datos queda por debajo', `Casi todos los ${u} ≤ ${pct(desc.p99)}${desc.p99 < P0 ? ' → <span class="bad">ni el mejor tramo cumple</span>' : ''}`],
+      ['Dispersión', 'Mín · Máx', T`x_{min}\cdot x_{max}`, null, 'Peor y mejor dato', `Peor ${u1}: ${pct(desc.min)} · mejor: ${pct(desc.max)}`],
+      [null, 'Rango', T`R`, desc.range, 'Máx − Mín: amplitud total', `${pts(desc.range)} entre el peor y el mejor ${u1}`],
+      [null, 'Rango intercuartílico', T`RIC`, desc.iqr, 'Q3 − Q1: amplitud del 50 % central', desc.iqr === 0 ? 'El 50 % central tiene el mismo valor' : `El 50 % central varía ${pts(desc.iqr)}`],
+      [null, 'Varianza', T`s^2`, desc.var, 'Promedio de desvíos al cuadrado', 'Unidades al cuadrado: se interpreta con s'],
+      [null, 'Desv. estándar', T`s`, desc.sd, 'Distancia típica de un dato a la media', `Cada ${u1} se aleja ± ${pts(desc.sd)} de la media`],
+      [null, 'Coef. variación', T`CV`, desc.cv, 's / x̄: dispersión relativa', `${pct(desc.cv, 1)} → variación ${cvTxt}`]
     ];
+    const val = (n, v) => n === 'Mín · Máx' ? `${fmt(desc.min, 3)} · ${fmt(desc.max, 3)}` : v === null ? '#N/A' : n === 'Coef. variación' ? pct(v, 2) : fmt(v, n === 'Varianza' ? 6 : 4);
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 4 · Medidas de tendencia central y dispersión</div>
-      <h1>¿Dónde se ubica la tasa de aciertos y cuánto varía?</h1>
-      <p class="lead">Variable analizada: tasa de aciertos de cada uno de los <b>${desc.m}</b> ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'} (puntos azules). Los marcadores aparecen en la recta uno a uno.</p>
+      <h1>¿Dónde se ubica la tasa y cuánto varía?</h1>
+      <p class="lead">Variable: tasa de aciertos de cada uno de los <b>${desc.m}</b> ${u} (puntos azules).</p>
       <div class="grid2">
         <div class="stack">
           <div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%">${band}${p85}<line x1="${pad - 10}" x2="${W - pad + 10}" y1="${base}" y2="${base}" stroke="#93a0b4" stroke-width="2"/>${ticks}${dots}${mk}</svg></div>
-          <div class="card"><div class="tbl-wrap" style="max-height:none"><table>
-            <thead><tr><th>Medida</th><th>Símbolo</th><th>Valor</th><th>Excel</th></tr></thead>
-            <tbody>${rows.map(([n, s, v, f], i) => `<tr class="rv" style="--d:${(0.1 + i * 0.06).toFixed(2)}s"><td>${n}</td><td>${tex(s)}</td><td class="mono">${v === null ? '#N/A' : fmt(v, n === 'Varianza' ? 6 : 4)}${n === 'Coef. variación' ? ` (${pct(v, 2)})` : ''}</td><td class="mono small" style="color:#b6f0c9">${f}</td></tr>`).join('')}</tbody>
+          <div class="card"><div class="tbl-wrap" style="max-height:none"><table class="mtc">
+            <thead><tr><th>Medida</th><th>Valor</th><th style="text-align:left">¿Qué representa?</th><th style="text-align:left">¿Cómo se lee aquí?</th></tr></thead>
+            <tbody>${rows.map(([g, n, s, v, what, read], i) => `${g ? `<tr><td colspan="4" style="background:#141b27;color:var(--orange);font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase">${g}</td></tr>` : ''}<tr class="rv" style="--d:${(0.1 + i * 0.05).toFixed(2)}s"><td><b>${n}</b><br>${tex(s)}</td><td class="mono">${val(n, v)}</td><td class="what">${what}</td><td class="read">${read}</td></tr>`).join('')}</tbody>
           </table></div></div>
         </div>
         <div class="stack">
-          <div class="card meaning"><h3>¿Qué significa?</h3>
-            <p>En promedio, la tasa de aciertos fue <b>${pct(desc.mean)}</b>, ${desc.mean < P0 ? `<span class="bad">${((P0 - desc.mean) * 100).toFixed(1)} puntos por debajo</span> del 85 % pactado` : '<span class="ok">por encima</span> del 85 % pactado'}. La mitad de los ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'} estuvo en ${pct(desc.median)} o menos (mediana).</p>
-            <p>La desviación estándar de <b>${fmt(desc.sd, 4)}</b> (CV = ${pct(desc.cv, 1)}) indica ${desc.cv < 0.1 ? 'poca variación entre grupos: la caída fue <b>sostenida</b>, no un pico aislado' : 'bastante variación entre grupos'}.${desc.max < P0 ? ` Ni siquiera el mejor ${R.D.mode === 'requests' ? 'lote' : 'intervalo'} (${pct(desc.max)}) alcanzó el 85 %.` : ''}</p>
-            ${desc.mode.value !== null ? `<p class="small muted">Moda = ${fmt(desc.mode.value, 3)} (se repite ${desc.mode.count} veces). Como la variable es continua, la escena 5 muestra también la <b>clase modal</b>.</p>` : `<p class="small muted">Ningún valor se repite: Excel devuelve #N/A en la moda. Se usa la clase modal del histograma.</p>`}
+          <div class="card meaning"><h3>Preguntas clave</h3>
+            <div class="qa">
+              <div><div class="q">¿Cuál es la tasa típica?</div><div class="a">Media <b>${pct(desc.mean)}</b> · mediana <b>${pct(desc.median)}</b>. Ambas bajo el 85 %.</div></div>
+              <div><div class="q">¿Por qué la media no basta?</div><div class="a">${norm.distinct <= 3 ? `Los ${u} solo valen ${[...new Set(x.map(v => pct(v, 0)))].sort().join(' o ')}: <b>ningún ${u1} tuvo ${pct(desc.mean)}</b>. La media es un punto donde no hay datos.` : 'La media se mueve con los valores extremos; los percentiles muestran cómo se reparten los datos.'}</div></div>
+              <div><div class="q">¿Qué aportan P95 y P99?</div><div class="a">Muestran el <b>techo</b> del servicio: el 95 % y el 99 % de los ${u} quedaron en ≤ <b>${pct(desc.p95)}</b> y ≤ <b>${pct(desc.p99)}</b>.${desc.p99 < P0 ? ' <span class="bad">Ni el mejor tramo llegó al 85 %.</span>' : ''}</div></div>
+              <div><div class="q">¿Cuánto varía?</div><div class="a">s = <b>${fmt(desc.sd, 4)}</b> (± ${pts(desc.sd)}) · CV = <b>${pct(desc.cv, 1)}</b> → variación ${cvTxt}.</div></div>
+              <div><div class="q">¿Media, mediana y moda coinciden?</div><div class="a">${Math.abs(desc.mean - desc.median) < 0.25 * desc.sd ? 'Sí: indicio de simetría.' : `No (${fmt(desc.mean, 3)} vs ${fmt(desc.median, 3)}): media &lt; mediana → <b>asimetría negativa</b>. Se analiza en la escena 6.`}</div></div>
+            </div>
           </div>
           ${how([
             { t: 'Media', f: T`\bar x=\frac{\sum x_i}{n}`, s: T`\bar x=\frac{${fmt(desc.sum)}}{${desc.m}}`, r: `x̄ = ${fmt(desc.mean)}`, xl: `=PROMEDIO(${E.rate})` },
@@ -1093,7 +1154,9 @@ SCENES.push({
             { t: 'Varianza muestral (n − 1)', f: T`s^2=\frac{\sum (x_i-\bar x)^2}{n-1}`, s: T`s^2=\frac{${fmt(desc.var * (desc.m - 1), 6)}}{${desc.m - 1}}`, r: `s² = ${fmt(desc.var, 6)}`, xl: `=VAR.S(${E.rate})` },
             { t: 'Desviación estándar', f: T`s=\sqrt{s^2}`, s: T`s=\sqrt{${fmt(desc.var, 6)}}`, r: `s = ${fmt(desc.sd, 5)}`, xl: `=DESVEST.M(${E.rate})` },
             { t: 'Coeficiente de variación', f: T`CV=\frac{s}{\bar x}\times100\%`, s: T`CV=\frac{${fmt(desc.sd, 5)}}{${fmt(desc.mean, 4)}}\times100\%`, r: `CV = ${pct(desc.cv, 2)}` },
-            { t: 'Cuartiles (método inclusivo)', f: T`L_q=(n-1)\,q+1`, s: T`L_{0.25}=${((desc.m - 1) * .25 + 1).toFixed(2)},\;L_{0.75}=${((desc.m - 1) * .75 + 1).toFixed(2)}`, r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)} · RIC = ${fmt(desc.iqr)}`, xl: `=CUARTIL.INC(${E.rate};1)`, note: E.howRate }
+            { t: 'Cuartiles (método inclusivo)', f: T`L_q=(n-1)\,q+1`, s: T`L_{0.25}=${((desc.m - 1) * .25 + 1).toFixed(2)},\;L_{0.75}=${((desc.m - 1) * .75 + 1).toFixed(2)}`, r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)} · RIC = ${fmt(desc.iqr)}`, xl: `=CUARTIL.INC(${E.rate};1)`, note: E.howRate },
+            { t: 'Percentiles 95 y 99 (método inclusivo)', f: T`L_k=(n-1)\frac{k}{100}+1`, s: T`L_{95}=${((desc.m - 1) * .95 + 1).toFixed(2)},\;L_{99}=${((desc.m - 1) * .99 + 1).toFixed(2)}`, r: `P95 = ${fmt(desc.p95)} · P99 = ${fmt(desc.p99)}`, xl: `=PERCENTIL.INC(${E.rate};0,95)  ·  =PERCENTIL.INC(${E.rate};0,99)`, note: 'Se ordenan los datos y se toma el valor en la posición L (interpolando si cae entre dos datos).' },
+            { t: 'Asimetría de Pearson', f: T`Sk=\frac{3(\bar x-Me)}{s}`, s: T`Sk=\frac{3(${fmt(desc.mean)}-${fmt(desc.median)})}{${fmt(desc.sd, 5)}}`, r: `Sk = ${fmt(desc.skew, 3)}`, xl: `=3*(PROMEDIO(${E.rate})-MEDIANA(${E.rate}))/DESVEST.M(${E.rate})` }
           ])}
         </div>
       </div>
@@ -1110,8 +1173,8 @@ SCENES.push({
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 5 · Histograma y tabla de frecuencias</div>
-      <h1>El histograma se construye clase por clase</h1>
-      <p class="lead">Regla de Sturges con n = ${desc.m}: ${tex(T`k=1+3.322\log_{10}(${desc.m})=${hist.kRaw.toFixed(3)}\Rightarrow k=${hist.k}`)} clases de amplitud ${tex(T`A=\frac{R}{k}=\frac{${fmt(desc.range)}}{${hist.k}}=${fmt(hist.w, 5)}`)}.</p>
+      <h1>Histograma y tabla de frecuencias</h1>
+      <p class="lead">Sturges: ${tex(T`k=1+3.322\log_{10}(${desc.m})\approx${hist.k}`)} clases · amplitud ${tex(T`A=\frac{R}{k}=${fmt(hist.w, 4)}`)}</p>
       <div class="grid2">
         <div class="stack">
           <div class="card"><div class="chart-box"><canvas id="hchart"></canvas></div></div>
@@ -1123,9 +1186,11 @@ SCENES.push({
         </div>
         <div class="stack">
           <div class="card meaning"><h3>¿Qué significa?</h3>
-            <p>La clase modal es <b>${lbl(hist.modal)}</b>, con ${hist.modal.f} ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'} (${pct(hist.modal.fr)}).</p>
-            ${R.norm.distinct <= 3 ? `<p><b>Ojo:</b> la tasa solo toma <b>${R.norm.distinct}</b> valores distintos (${[...new Set(R.x.map(v => v.toFixed(3)))].sort().join(' y ')}). Por eso hay clases vacías: los datos se concentran en los extremos y no hay una forma de campana.</p>` : `<p>Observa si las barras forman una campana simétrica alrededor de x̄ = ${fmt(desc.mean, 3)}: es la primera pista para la escena de normalidad.</p>`}
-            <p class="small muted">Barras <span class="hl">naranjas</span>: clases completamente por debajo del 85 % del contrato · <span class="ok">verdes</span>: clases que llegan al 85 % o lo superan.</p>
+            <ul class="keys">
+              <li>Clase modal: <b>${lbl(hist.modal)}</b> con ${hist.modal.f} ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'} (${pct(hist.modal.fr)}).</li>
+              ${R.norm.distinct <= 3 ? `<li>Solo hay <b>${R.norm.distinct} valores</b> distintos (${[...new Set(R.x.map(v => v.toFixed(2)))].sort().join(' y ')}): clases vacías en el medio.</li><li><b>No hay forma de campana</b>: primera señal de que no es normal.</li>` : `<li>¿Las barras forman una campana alrededor de x̄ = ${fmt(desc.mean, 3)}? Primera pista de normalidad.</li>`}
+              ${hist.classes.every(c => c.ls <= P0 + 1e-9) ? '<li>Todas las clases quedan <span class="bad">bajo el 85 %</span>.</li>' : ''}
+            </ul>
           </div>
           ${how([
             { t: 'Número de clases (Sturges)', f: T`k=1+3.322\log_{10} n`, s: T`k=1+3.322\log_{10}(${desc.m})=${hist.kRaw.toFixed(4)}`, r: `k = ${hist.k} (se redondea hacia arriba)`, xl: `=REDONDEAR.MAS(1+3,322*LOG10(${desc.m});0)` },
@@ -1156,59 +1221,64 @@ SCENES.push({
 });
 
 /* ---------------- Escena 6 · ¿Es normal? ----------------
-   Solo con lo visto en clase: forma del histograma frente a la curva normal,
-   propiedad de simetría (media = mediana = moda) y regla empírica. */
+   Cinco criterios vistos en clase: forma del histograma, media = mediana = moda,
+   asimetría de Pearson, regla empírica y percentiles frente a la normal. */
 SCENES.push({
   title: '¿Normal?',
   render(el) {
     const { norm, desc, hist, E, x } = R;
-    const { emp, sym } = norm;
+    const { emp, sym, pctl } = norm;
     const verdict = norm.isNormal;
     const unidad = R.D.mode === 'requests' ? 'lote' : 'intervalo';
-    const modaLab = sym.modeIsClass ? 'Moda (marca de la clase modal)' : 'Moda';
     const valores = [...new Set(x.map(v => v.toFixed(2)))].sort();
-    // Razones del veredicto, en lenguaje sencillo
-    const reasons = [];
-    if (norm.distinct <= 3) reasons.push(`<b>Histograma:</b> la tasa solo toma ${norm.distinct} valores (${valores.join(' y ')}). Las barras quedan separadas y no forman una campana.`);
-    reasons.push(sym.ok
-      ? `<b>Simetría:</b> la media (${fmt(desc.mean, 3)}), la mediana (${fmt(sym.median, 3)}) y la moda (${fmt(sym.mode, 3)}) prácticamente coinciden, como en una normal.`
-      : `<b>Simetría:</b> en una normal la media, la mediana y la moda coinciden. Aquí la media es ${fmt(desc.mean, 3)}, pero la mediana es ${fmt(sym.median, 3)} y la moda ${fmt(sym.mode, 3)}: <b>no coinciden</b>, la distribución no es simétrica.`);
-    emp.forEach(e => reasons.push(`<b>Regla empírica ±${e.k}σ:</b> ${pct(e.pct)} de los datos frente al ${(e.expected * 100).toFixed(1)} % esperado → ${e.ok ? '<span class="ok">se cumple</span>' : '<span class="bad">no se cumple</span>'}.`));
+    const mark = ok => `<span class="${ok ? 'ok' : 'bad'}" style="font-size:20px"><b>${ok ? '✔' : '✘'}</b></span>`;
+    const skTxt = Math.abs(desc.skew) < 0.5 ? 'aprox. simétrica' : desc.skew < 0 ? 'sesgo a la izquierda' : 'sesgo a la derecha';
+    // Criterios: [nombre, qué se espera si fuera normal, qué se observa, ¿cumple?]
+    const crit = [
+      ['1 · Forma del histograma', 'Campana: muchos valores, más datos en el centro', norm.distinct <= 3 ? `Solo ${norm.distinct} valores (${valores.join(' y ')}), barras separadas` : `${norm.distinct} valores distintos`, norm.shapeOk],
+      ['2 · Media = mediana = moda', `Las tres casi iguales (diferencia ≤ s/4 = ${fmt(sym.tol, 3)})`, `x̄ = ${fmt(desc.mean, 3)} · Me = ${fmt(sym.median, 3)} · Mo = ${fmt(sym.mode, 3)}`, sym.ok],
+      ['3 · Asimetría de Pearson', 'Sk ≈ 0 (se acepta |Sk| < 0.5)', `Sk = ${fmt(desc.skew, 2)} → ${skTxt}`, norm.skewOk],
+      ['4 · Regla empírica', '68.3 % · 95.4 % · 99.7 % en ±1s, ±2s, ±3s', emp.map(e => pct(e.pct)).join(' · '), norm.empOk],
+      ['5 · Percentiles vs normal', pctl.map(p => `P${p.q} ≈ x̄ + ${p.z}s = ${fmt(p.exp, 3)}`).join('<br>'), pctl.map(p => `P${p.q} = ${fmt(p.obs, 3)}`).join('<br>'), norm.pctlOk]
+    ];
+    const nOk = crit.filter(c => c[3]).length;
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 6 · ¿La muestra es normal?</div>
-      <h1>¿La tasa de aciertos por ${unidad} sigue una distribución normal?</h1>
-      <p class="lead">Se revisan tres cosas vistas en clase: la <b>forma</b> del histograma frente a la curva normal, la <b>simetría</b> (en la normal, media = mediana = moda) y la <b>regla empírica</b> 68.3 / 95.4 / 99.7.</p>
+      <h1>¿La tasa por ${unidad} sigue una distribución normal?</h1>
+      <p class="lead">Se comparan 5 propiedades de la normal con lo que muestran los datos.</p>
       <div class="grid2 even">
         <div class="stack">
-          <div class="card"><h3><span class="tag">1</span> Histograma con la curva normal teórica (μ = x̄, σ = s)</h3><div class="chart-box sm"><canvas id="nchart"></canvas></div>
-            <div class="muted small">Si los datos fueran normales, las barras seguirían la forma de campana de la curva azul.</div></div>
-          <div class="card"><h3><span class="tag">2</span> Simetría: ¿media = mediana = moda?</h3>
-            <div class="tiles">
-              <div class="tile rv" style="--d:.3s"><div class="l">Media x̄</div><div class="v hl">${fmt(desc.mean, 3)}</div><div class="x">=PROMEDIO(${E.rate})</div></div>
-              <div class="tile rv" style="--d:.6s"><div class="l">Mediana</div><div class="v">${fmt(sym.median, 3)}</div><div class="x">=MEDIANA(${E.rate})</div></div>
-              <div class="tile rv" style="--d:.9s"><div class="l">${modaLab}</div><div class="v">${fmt(sym.mode, 3)}</div><div class="x">${sym.modeIsClass ? 'clase modal (escena 5)' : `=MODA.UNO(${E.rate})`}</div></div>
-            </div>
-            <p class="small ${sym.ok ? 'ok' : 'bad'}" style="margin:.7em 0 0"><b>${sym.ok ? '✔ Coinciden' : '✘ No coinciden'}</b>: la media se aleja ${fmt(sym.dMedian, 3)} de la mediana, y se acepta como máximo ${fmt(sym.tol, 3)} (un cuarto de la desviación estándar, s/4).</p>
+          <div class="card"><h3><span class="tag">1</span> Histograma vs. curva normal (μ = x̄, σ = s)</h3><div class="chart-box sm"><canvas id="nchart"></canvas></div>
+            <div class="muted small">Si fuera normal, las barras seguirían la campana azul.</div></div>
+          <div class="card"><h3><span class="tag">4</span> Regla empírica: % real dentro de x̄ ± ks</h3>
+            ${emp.map(e => `<div class="emp-row"><b>±${e.k}s</b><div class="emp-bar"><div class="real" data-w="${(e.pct * 100).toFixed(1)}"></div><div class="theo" style="left:${e.expected * 100}%"></div></div><span class="mono">${pct(e.pct)} <span class="muted">vs ${(e.expected * 100).toFixed(1)}</span> ${mark(e.ok)}</span></div>`).join('')}
+            <div class="muted small">Barra = % real · línea blanca = % teórico.</div>
           </div>
         </div>
         <div class="stack">
-          <div class="card"><h3><span class="tag">3</span> Regla empírica: % real dentro de x̄ ± kσ</h3>
-            ${emp.map(e => `<div class="emp-row"><b>±${e.k}σ</b><div class="emp-bar"><div class="real" data-w="${(e.pct * 100).toFixed(1)}"></div><div class="theo" style="left:${e.expected * 100}%"></div></div><span class="mono">${pct(e.pct)} <span class="muted">vs ${(e.expected * 100).toFixed(1)}</span> <span class="${e.ok ? 'ok' : 'bad'}">${e.ok ? '✔' : '✘'}</span></span></div>`).join('')}
-            <div class="muted small">Barra = % real · línea blanca = valor teórico. Se acepta una diferencia de hasta 10, 5 y 3 puntos porcentuales, respectivamente.</div>
+          <div class="card"><h3><span class="tag">CRITERIOS</span> ${nOk} de ${crit.length} se cumplen</h3>
+            <div class="tbl-wrap" style="max-height:none"><table class="mtc">
+              <thead><tr><th>Criterio</th><th style="text-align:left">Si fuera normal</th><th style="text-align:left">Observado</th><th></th></tr></thead>
+              <tbody>${crit.map(([n, e, o, ok], i) => `<tr class="rv" style="--d:${(0.2 + i * 0.25).toFixed(2)}s"><td style="text-align:left"><b>${n}</b></td><td class="what">${e}</td><td class="read mono">${o}</td><td style="text-align:center">${mark(ok)}</td></tr>`).join('')}</tbody>
+            </table></div>
           </div>
-          <div class="verdict ${verdict ? 'yes' : 'no'} rv" style="--d:1.2s"><span class="ico">${verdict ? '✔' : '✘'}</span><span>${verdict ? 'Se puede asumir normalidad' : 'No se puede asumir normalidad'}</span></div>
+          <div class="verdict ${verdict ? 'yes' : 'no'} rv" style="--d:1.6s"><span class="ico">${verdict ? '✔' : '✘'}</span><span>${verdict ? 'Se puede asumir normalidad' : 'No se puede asumir normalidad'}</span></div>
           <div class="card meaning"><h3>¿Qué significa?</h3>
-            <ul style="margin:.2em 0 .6em;padding-left:20px">${reasons.map(r => `<li style="margin:.3em 0">${r}</li>`).join('')}</ul>
-            <p><b>¿Afecta la prueba de hipótesis?</b> No. La prueba sobre <i>p</i> no usa las tasas por ${unidad}: usa los ${int(R.prop.n)} ceros y unos. El número de hits sigue una <b>distribución binomial</b>, y la binomial se aproxima a la normal cuando ${tex(T`np_0\ge5`)} y ${tex(T`n(1-p_0)\ge5`)}. Eso se verifica en la escena 8.</p>
-            ${R.periodic ? `<p class="small am">El patrón periódico de los misses (cada ${R.periodic.gap} peticiones) explica por qué las tasas por ${unidad} solo valen ${valores.join(' o ')}.</p>` : ''}
+            <ul class="keys">
+              ${verdict ? '<li>Los datos se comportan como una normal: se pueden usar métodos basados en ella.</li>' : `<li>La tasa por ${unidad} <b>no es normal</b>: ${!sym.ok || !norm.skewOk ? 'es asimétrica' : 'no tiene forma de campana'}${norm.distinct <= 3 ? ` y solo toma ${norm.distinct} valores` : ''}.</li>`}
+              <li><b>¿Afecta la prueba de hipótesis?</b> No: la prueba usa los ${int(R.prop.n)} ceros y unos (binomial), que se aproxima a la normal si ${tex(T`np_0\ge5`)} y ${tex(T`n(1-p_0)\ge5`)} (escena 8).</li>
+              ${R.periodic ? `<li class="am">Causa: los misses caen cada ${R.periodic.gap} peticiones, por eso las tasas solo valen ${valores.join(' o ')}.</li>` : ''}
+            </ul>
           </div>
           ${how([
             { t: 'Curva normal superpuesta (frecuencia esperada)', f: T`f(x)=n\,A\;\frac{1}{s\sqrt{2\pi}}\,e^{-\frac{1}{2}\left(\frac{x-\bar x}{s}\right)^2}`, s: T`\bar x=${fmt(desc.mean)},\; s=${fmt(desc.sd, 5)},\; n\,A=${desc.m}\times${fmt(hist.w, 5)}`, xl: `=${desc.m}*${xl(hist.w, 5)}*DISTR.NORM.N(x;${xl(desc.mean)};${xl(desc.sd, 5)};FALSO)` },
             { t: 'Simetría', f: T`\text{Normal}\Rightarrow \bar x = Me = Mo`, s: T`${fmt(desc.mean, 3)}\;\text{vs}\;${fmt(sym.median, 3)}\;\text{vs}\;${fmt(sym.mode, 3)}`, r: `|x̄ − Me| = ${fmt(sym.dMedian, 4)} ${sym.dMedian <= sym.tol ? '≤' : '>'} s/4 = ${fmt(sym.tol, 4)}`, xl: `=ABS(PROMEDIO(${E.rate})-MEDIANA(${E.rate}))` },
             { t: 'Límites de la regla empírica', f: T`\bar x\pm k\,s`, s: emp.map(e => T`\pm${e.k}s:[${fmt(e.lo)},\,${fmt(e.hi)}]`).join(T`\quad `), xl: `=PROMEDIO(${E.rate})-DESVEST.M(${E.rate})  ·  =PROMEDIO(${E.rate})+DESVEST.M(${E.rate})` },
             { t: 'Porcentaje real dentro de ±1σ', f: T`\%=\frac{\text{datos entre }\bar x-s\text{ y }\bar x+s}{n}`, s: T`\frac{${emp[0].count}}{${desc.m}}`, r: emp.map(e => `±${e.k}σ: ${e.count}/${desc.m} = ${pct(e.pct)}`).join(' · '), xl: `=CONTAR.SI.CONJUNTO(${E.rate};">="&${xl(emp[0].lo)};${E.rate};"<="&${xl(emp[0].hi)})/${desc.m}` },
-            { t: 'Con la tabla normal estándar', f: T`z=\frac{x-\mu}{\sigma}\;\Rightarrow\;P(-1\le Z\le 1)=0.8413-0.1587=0.6826`, note: 'De ahí sale el 68.3 % de la regla empírica (y de igual forma el 95.4 % con z = ±2 y el 99.7 % con z = ±3).', xl: '=DISTR.NORM.ESTAND.N(1;VERDADERO)-DISTR.NORM.ESTAND.N(-1;VERDADERO)' }
+            { t: 'Con la tabla normal estándar', f: T`z=\frac{x-\mu}{\sigma}\;\Rightarrow\;P(-1\le Z\le 1)=0.8413-0.1587=0.6826`, note: 'De ahí sale el 68.3 % de la regla empírica (y de igual forma el 95.4 % con z = ±2 y el 99.7 % con z = ±3).', xl: '=DISTR.NORM.ESTAND.N(1;VERDADERO)-DISTR.NORM.ESTAND.N(-1;VERDADERO)' },
+            { t: 'Asimetría de Pearson', f: T`Sk=\frac{3(\bar x-Me)}{s}`, s: T`Sk=\frac{3(${fmt(desc.mean)}-${fmt(desc.median)})}{${fmt(desc.sd, 5)}}`, r: `Sk = ${fmt(desc.skew, 3)} (negativo: cola a la izquierda · positivo: cola a la derecha)`, xl: `=3*(PROMEDIO(${E.rate})-MEDIANA(${E.rate}))/DESVEST.M(${E.rate})` },
+            { t: 'Percentiles esperados si fuera normal', f: T`P_{95}=\bar x+1.645\,s,\qquad P_{99}=\bar x+2.326\,s`, s: T`${fmt(desc.mean)}+1.645(${fmt(desc.sd, 4)})=${fmt(pctl[0].exp)},\quad ${fmt(desc.mean)}+2.326(${fmt(desc.sd, 4)})=${fmt(pctl[1].exp)}`, r: `Observados: P95 = ${fmt(pctl[0].obs)} · P99 = ${fmt(pctl[1].obs)}`, xl: `=PROMEDIO(${E.rate})+INV.NORM.ESTAND(0,95)*DESVEST.M(${E.rate})  ·  =PERCENTIL.INC(${E.rate};0,95)`, note: '1.645 y 2.326 son los valores z de la tabla normal que dejan 95 % y 99 % del área a la izquierda.' }
           ])}
         </div>
       </div>
@@ -1264,8 +1334,8 @@ SCENES.push({
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 7 · Intervalos de confianza</div>
-      <h1>¿Cabe el 85 % dentro de lo que dicen los datos?</h1>
-      <p class="lead">Un intervalo de confianza es el rango de valores plausibles para el parámetro. Si el 0.85 queda <b>fuera</b> (por encima), los datos no son compatibles con que Fastly haya cumplido.</p>
+      <h1>¿Cabe el 85 % en el intervalo?</h1>
+      <p class="lead">IC = rango de valores plausibles del parámetro. Si 0.85 queda <b>fuera</b>, los datos no apoyan a Fastly.</p>
       <div class="grid2">
         <div class="stack">
           <div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%">${svg}</svg></div>
@@ -1276,10 +1346,12 @@ SCENES.push({
         </div>
         <div class="stack">
           <div class="card meaning"><h3>¿Qué significa?</h3>
-            <p>Con 95 % de confianza, la tasa real de aciertos está entre <b>${pct(ci.prop[0].lo)}</b> y <b>${pct(ci.prop[0].hi)}</b>. Con 99 %, entre ${pct(ci.prop[1].lo)} y ${pct(ci.prop[1].hi)}.</p>
-            <p>${!pIn95 && !pIn99 && ci.prop[1].hi < P0 ? '<b class="bad">El 0.85 queda por encima de ambos intervalos</b>: incluso en el escenario más favorable para Fastly, la tasa no llega a lo pactado.' : pIn99 && !pIn95 ? 'El 0.85 queda fuera del 95 % pero dentro del 99 %: la evidencia es moderada y depende del nivel de exigencia.' : pIn95 ? '<b class="ok">El 0.85 está dentro del intervalo</b>: los datos son compatibles con que Fastly cumplió.' : 'El 0.85 queda fuera de los intervalos.'}</p>
-            <p class="small muted">El intervalo del 99 % siempre es más ancho que el del 95 %: más confianza exige más margen.</p>
-            <p class="small muted">El IC de la media usa la variabilidad <i>entre ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'}</i> (s/√${desc.m}) y el de la proporción usa la variabilidad binomial √(p̂(1−p̂)/n). ${ci.seMean < ci.seProp * 0.6 ? 'Aquí el de la media es mucho más estrecho porque los lotes casi no varían entre sí (el patrón regular de la muestra).' : ''}</p>
+            <ul class="keys">
+              <li><b>95 %:</b> la tasa real está entre <b>${pct(ci.prop[0].lo)}</b> y <b>${pct(ci.prop[0].hi)}</b>.</li>
+              <li><b>99 %:</b> entre <b>${pct(ci.prop[1].lo)}</b> y <b>${pct(ci.prop[1].hi)}</b>.</li>
+              <li>${!pIn95 && !pIn99 && ci.prop[1].hi < P0 ? '<b class="bad">0.85 queda fuera de ambos</b>: ni en el mejor caso Fastly llega a lo pactado.' : pIn99 && !pIn95 ? '0.85 fuera del 95 % pero dentro del 99 %: evidencia moderada.' : pIn95 ? '<b class="ok">0.85 está dentro</b>: los datos son compatibles con Fastly.' : '0.85 queda fuera de los intervalos.'}</li>
+              <li class="muted">El 99 % es más ancho: más confianza exige más margen.</li>
+            </ul>
           </div>
           ${how([
             { t: 'IC para la media', f: T`\bar x \pm z_{\alpha/2}\,\frac{s}{\sqrt n}`, s: T`${fmt(desc.mean)}\pm 1.96\cdot\frac{${fmt(desc.sd, 5)}}{\sqrt{${desc.m}}}=${fmt(desc.mean)}\pm${fmt(ci.mean[0].me, 5)}`, r: `95 %: [${fmt(ci.mean[0].lo)}, ${fmt(ci.mean[0].hi)}] · 99 %: [${fmt(ci.mean[1].lo)}, ${fmt(ci.mean[1].hi)}]`, xl: `=PROMEDIO(${E.rate})-INTERVALO.CONFIANZA.NORM(0,05;DESVEST.M(${E.rate});CONTAR(${E.rate}))` },
@@ -1326,8 +1398,11 @@ SCENES.push({
           </div>
           <div class="card ${big ? 'warn' : ''}">
             <h3>Significancia estadística vs. práctica</h3>
-            <p class="small" style="margin:0">${big ? `<b>Con n = ${int(prop.n)} peticiones, incluso una caída mínima sale «significativa».</b> Por eso hay que mirar el tamaño del efecto: ` : 'Además de la significancia, importa el tamaño del efecto: '}
-            p̂ − p₀ = <b>${(dif * 100).toFixed(2)} puntos porcentuales</b>. En la práctica los misses pasan de 15 % a ${pct(1 - prop.phat)}: el origen recibe <b>${pct((1 - prop.phat) / (1 - P0) - 1, 0)}</b> ${dif < 0 ? 'más' : 'menos'} tráfico que lo pactado. ${Math.abs(dif) >= 0.02 ? 'Es una diferencia <b>prácticamente relevante</b>: basta para saturar una base de datos dimensionada para el 15 %.' : 'Es una diferencia pequeña en la práctica, aunque sea estadísticamente significativa.'}</p>
+            <ul class="keys small">
+              <li>p̂ − p₀ = <b>${(dif * 100).toFixed(1)} pts</b>.</li>
+              <li>Misses: de 15 % a <b>${pct(1 - prop.phat)}</b> → el origen recibe <b>${pct((1 - prop.phat) / (1 - P0) - 1, 0)} ${dif < 0 ? 'más' : 'menos'}</b> tráfico.</li>
+              <li>${Math.abs(dif) >= 0.02 ? 'Diferencia <b>relevante en la práctica</b>: suficiente para saturar la base de datos.' : 'Diferencia pequeña en la práctica.'}</li>
+            </ul>
           </div>
           ${testAlt ? `<div class="card"><h3>Versión con n = número de intervalos (${propAlt.n})</h3><p class="small" style="margin:0">${tex(T`z=\frac{${fmt(propAlt.phat)}-0.85}{\sqrt{0.85(0.15)/${propAlt.n}}}=${fmt(testAlt.z)}`)}, valor p = ${fmtP(testAlt.pval)} → ${testAlt.reject05 ? '<b class="bad">rechazar H₀</b>' : '<b class="ok">no rechazar H₀</b>'} (α = 0.05). Con menos «n» el error estándar crece y la prueba es más conservadora.</p></div>` : ''}
         </div>
@@ -1391,6 +1466,7 @@ SCENES.push({
           <div class="resuelve"><b>RESUELVE:</b> ${rj
             ? `<b>RECHAZAR H₀.</b> Hay evidencia estadística suficiente de que la tasa de aciertos en caché de Fastly cayó por debajo del 85 % estipulado. Se declara a <b>Fastly responsable</b> de los costos derivados de la saturación de los servidores origen de NYT y Reddit.`
             : `<b>NO RECHAZAR H₀.</b> No hay evidencia suficiente de que la tasa cayera por debajo del 85 %. Se <b>absuelve a Fastly</b>; el colapso se atribuye a la configuración de los balanceadores de los propios medios.`}</div>
+          <div class="sub" style="margin:14px 0 0;font-size:.9em">Peritos: ${TEAM.join(' · ')}</div>
           <div class="stamp-row"><div class="stamp ${rj ? 'red' : 'green'}">${rj ? 'FASTLY<br>RESPONSABLE' : 'FASTLY<br>ABSUELTO'}<small>α = 0.05 · p = ${fmtP(test.pval)}</small></div></div>
         </div>
         <div class="stack">
@@ -1405,18 +1481,24 @@ SCENES.push({
           </div>
           <div class="err-grid">
             <div class="err" style="border-color:rgba(255,61,74,.5)"><h3 class="bad">Error tipo I (α)</h3>
-              <p class="small"><b>Culpar a Fastly cuando la tasa sí se sostuvo.</b> Fastly paga indemnizaciones injustas y sufre daño reputacional; los medios no corrigen sus balanceadores y el problema se repite.</p>
-              <p class="small"><b>Más costoso para Fastly.</b> Por eso H₀ lo protege (como la presunción de inocencia) y α se fija bajo: P(error I) ≤ 0.05. Con α = 0.01 la protección es mayor.</p>
+              <ul class="keys small">
+                <li><b>Culpar a Fastly</b> cuando sí cumplió.</li>
+                <li>Perjudica a Fastly: paga costos injustos.</li>
+                <li>Se controla con α = 0.05.</li>
+              </ul>
             </div>
             <div class="err" style="border-color:rgba(255,194,71,.5)"><h3 class="am">Error tipo II (β)</h3>
-              <p class="small"><b>Absolver a Fastly cuando sí falló.</b> NYT y Reddit absorben los costos del apagón y siguen con un proveedor que no cumple.</p>
-              <p class="small"><b>Más costoso para NYT/Reddit.</b> Es más probable cuando la caída real es pequeña o la muestra es pequeña: los datos no alcanzan a demostrar el incumplimiento.</p>
+              <ul class="keys small">
+                <li><b>Absolver a Fastly</b> cuando sí falló.</li>
+                <li>Perjudica a NYT/Reddit: asumen los costos.</li>
+                <li>Más probable con muestras pequeñas.</li>
+              </ul>
             </div>
           </div>
-          <div class="card small"><b>El equilibrio entre los dos errores:</b> bajar α de 0.05 a 0.01 protege más a Fastly (menos error tipo I), pero hace más difícil culparlo cuando sí falló (más error tipo II, que perjudica a los medios).</div>
+          <div class="card small">Bajar α (0.05 → 0.01) reduce el error tipo I pero aumenta el tipo II.</div>
           <div class="card meaning"><h3>¿Qué significa?</h3><p>${rj
-            ? `Como se rechazó H₀, el único error posible es el <b>tipo I</b>. Su probabilidad está acotada por α = 0.05, y el valor p (${fmtP(test.pval)}) indica que, si Fastly hubiera cumplido, ver una tasa tan baja sería extremadamente raro.`
-            : `Como no se rechazó H₀, el único error posible es el <b>tipo II</b>: que Fastly sí haya fallado pero la muestra no alcanzara a demostrarlo.`}</p></div>
+            ? `Se rechazó H₀ → el único error posible es el <b>tipo I</b>, con probabilidad ≤ 0.05. Con un valor p de ${fmtP(test.pval)}, ese riesgo es mínimo.`
+            : `No se rechazó H₀ → el único error posible es el <b>tipo II</b>.`}</p></div>
           ${how([
             { t: 'Probabilidad de error tipo I', f: T`P(\text{error tipo I})=\alpha`, r: 'α = 0.05 (principal) · α = 0.01 (comparación)' },
             { t: 'Decisión', f: T`\text{Rechazar }H_0\iff z\le z_\alpha\iff \text{valor }p<\alpha`, s: T`${fmt(test.z, 4)}\le-1.645,\qquad ${texP(test.pval)}<0.05`, r: rj ? 'Se rechaza H₀ → el único error posible es el tipo I' : 'No se rechaza H₀ → el único error posible es el tipo II', xl: `=DISTR.NORM.ESTAND.N(${xl(test.z)};VERDADERO)<0,05` }
