@@ -228,7 +228,7 @@ svg text{font-family:Inter,sans-serif}
 <body>
 
 <header class="topbar">
-  <div class="brand"><span class="led"></span>Incidente #4 · Fastly CDN <small>· Prueba de proporción</small></div>
+  <div class="brand"><span class="led"></span>Incidente #4 · Fastly · Red de Distribución de Contenido (CDN) <small>· Prueba de proporción</small></div>
   <div class="spacer"></div>
   <span class="badge" id="dsBadge">cargando…</span>
 </header>
@@ -360,7 +360,7 @@ const Stats = (() => {
    ===================================================================== */
 const P0 = 0.85;                  // tasa contractual de aciertos
 const Z95 = 1.96, Z99 = 2.576;    // valores de tabla para los IC
-let groupSize = 10;               // tamaño de lote cuando hay una fila por petición
+let groupSize = 5;                // tamaño de lote cuando hay una fila por petición
 let DATA = null;                  // conjunto de datos detectado
 let R = null;                     // resultados de todos los cálculos
 
@@ -645,6 +645,7 @@ function tex(s, display = false) {
 /** Panel "¿Cómo se hizo?": cada paso muestra fórmula, valores sustituidos,
  *  resultado y la fórmula de Excel equivalente. */
 function how(steps, open = false, title = '¿Cómo se hizo?') {
+  return ''; // Paneles retirados de la presentación: el detalle está en los botones "Paso a paso"
   return `<details class="how"${open ? ' open' : ''}><summary>${title}</summary><div class="how-body">
     <div class="muted small">Fórmulas de Excel en español con separador <code>;</code> y coma decimal. Si tu Excel está en inglés usa <code>,</code> como separador y punto decimal.</div>
     ${steps.map(s => `<div class="hstep">
@@ -672,6 +673,8 @@ document.addEventListener('click', e => {
   const row = document.getElementById(b.dataset.proc);
   if (row) { row.classList.toggle('on'); b.classList.toggle('on', row.classList.contains('on')); }
 });
+/** Une una lista en español: 'a, b y c'. */
+const joinY = (arr, w = 'y') => arr.length < 2 ? arr.join('') : arr.slice(0, -1).join(', ') + ` ${w} ` + arr[arr.length - 1];
 const procBtn = id => `<br><button class="proc-btn" data-proc="${id}">Paso a paso <span class="car">▾</span></button>`;
 /** Lista numerada de pasos: {t: título, f: LaTeX, r: resultado, n: nota, xl: fórmula Excel}. */
 function procHTML(steps) {
@@ -1005,7 +1008,7 @@ SCENES.push({
     const modeTxt = { requests: 'Una fila por petición (hit = 1 / miss = 0)', intervals: 'Una fila por intervalo/servidor (peticiones y hits)', rates: 'Una fila por intervalo con la tasa de aciertos' }[D.mode];
     const idCol = D.info.find(c => c.isId && c.numeric);
     const periodo = idCol ? `${D.cols[idCol.idx]} ${idCol.nums[0]} → ${idCol.nums[idCol.nums.length - 1]}` : `${D.rows.length} filas`;
-    const canGroup = D.mode === 'requests' && !D.groupCol;
+    const { desc } = R, M = measureModel();
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 3 · Conjunto de datos</div>
@@ -1018,125 +1021,29 @@ SCENES.push({
         <div class="tile rv" style="--d:.45s"><div class="l">p̂</div><div class="v hl">${fmt(prop.phat)}</div><div class="x">=${E.phatExpr}</div></div>
       </div>
       <div class="grid2">
-        <div class="card">
-          <div class="toolbar">
-            <div class="seg" id="viewSeg"><button data-v="raw" class="on">Datos del Excel</button><button data-v="grp">${D.mode === 'requests' ? 'Tasa por lote' : 'Tasa por fila'}</button></div>
-            <input type="search" id="q" placeholder="Buscar…" style="flex:1;min-width:140px">
-            <span class="muted small" id="tInfo"></span>
-          </div>
-          <div class="tbl-wrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
-          <div class="muted small" style="margin-top:6px">Haz clic en un encabezado para ordenar ▲▼.</div>
+        <div class="card"><h3><span class="tag">POSICIÓN</span> ¿Cómo se reparten las tasas de los ${groups.length} lotes?</h3>
+          ${measureTable(M.pos, M.P, M.val, 'pp')}
         </div>
         <div class="stack">
           <div class="card"><h3><span class="tag">FORMATO DETECTADO</span></h3><p style="margin:0">${modeTxt}</p>
-            <p class="small muted" style="margin:.4em 0 0">${D.mode === 'requests' ? `Columna de aciertos: <b>${D.hitCol.name}</b> (columna ${D.hitCol.letter}).` : D.mode === 'intervals' ? `Peticiones: <b>${D.reqCol.name}</b> · Hits: <b>${D.hitsCol.name}</b>.` : `Tasa: <b>${D.rateCol.name}</b>${D.scale === 100 ? ' (en %, se divide entre 100)' : ''}.`}</p></div>
-          ${D.mode === 'requests' ? `<div class="card warn">
-            <h3>¿Por qué agrupar?</h3>
-            <ul class="keys small" style="margin-bottom:.6em">
-              <li>Una variable 0/1 solo tiene 2 barras: <b>nunca</b> forma campana.</li>
-              <li>Se agrupa ${D.groupCol ? `por <b>${D.groupCol.name}</b>` : 'en <b>lotes consecutivos</b>'} → tasa por lote (variable continua para MTC, histograma y normalidad).</li>
-              <li>La prueba de proporción usa los ${int(prop.n)} ceros y unos directamente.</li>
-            </ul>
-            ${canGroup ? `<label class="small" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Peticiones por lote:
-              <select id="gs">${[5, 10, 20, 25, 50, 100].filter(g => D.seq.length / g >= 4).map(g => `<option ${g === groupSize ? 'selected' : ''}>${g}</option>`).join('')}</select>
-              <span class="muted">→ ${groups.length} lotes</span></label>` : ''}
-          </div>` : ''}
-          <div class="card meaning"><h3>¿Qué significa?</h3><p>${D.mode === 'requests' ? `${int(prop.n)} peticiones · ${int(prop.n - prop.hits)} misses al origen · <b>${groups.length} tasas por lote</b>.` : `${groups.length} intervalos con su tasa de aciertos.`}</p></div>
-          ${how([
-            { t: 'Número de observaciones', r: `n = ${int(prop.n)}`, xl: '=' + E.nExpr },
-            ...(prop.hits !== null ? [{ t: 'Total de hits', r: `x = ${int(prop.hits)}`, xl: '=' + E.hitsExpr }] : []),
-            { t: 'Proporción de aciertos', f: T`\hat p=\frac{x}{n}`, s: prop.hits !== null ? T`\hat p=\frac{${prop.hits}}{${prop.n}}=${fmt(prop.phat)}` : '', r: `p̂ = ${fmt(prop.phat)}`, xl: '=' + E.phatExpr },
-            { t: 'Columna auxiliar de tasas (para replicar en Excel)', r: `${groups.length} valores en ${E.rate}`, note: E.howRate }
-          ])}
+            <p class="small muted" style="margin:.4em 0 0">${D.mode === 'requests' ? `Columna de aciertos: <b>${D.hitCol.name}</b> (columna ${D.hitCol.letter}) · lotes de <b>${groupSize}</b> peticiones → <b>${groups.length} tasas</b>.` : D.mode === 'intervals' ? `Peticiones: <b>${D.reqCol.name}</b> · Hits: <b>${D.hitsCol.name}</b>.` : `Tasa: <b>${D.rateCol.name}</b>${D.scale === 100 ? ' (en %, se divide entre 100)' : ''}.`}</p></div>
+          <div class="card meaning"><h3>Preguntas clave</h3>
+            <div class="qa">
+              <div><div class="q">¿Qué dicen Q1 y Q3?</div><div class="a">El 25 % de los lotes tuvo ≤ <b>${pct(desc.q1)}</b> y el 75 % tuvo ≤ <b>${pct(desc.q3)}</b>. ${desc.q3 < P0 ? 'Tres de cada cuatro lotes quedaron bajo el 85 %.' : ''}</div></div>
+              <div><div class="q">¿Qué aportan P95 y P99?</div><div class="a">Muestran el <b>techo</b> del servicio: el 95 % de los lotes tuvo ≤ <b>${pct(desc.p95)}</b> y el 99 % ≤ <b>${pct(desc.p99)}</b>.${desc.p95 < P0 ? ' <span class="bad">El 95 % de los lotes no llegó al 85 %.</span>' : ''}${desc.p99 >= P0 ? ' Solo el 1 % más alto supera el contrato.' : ' <span class="bad">Ni el mejor tramo llegó al 85 %.</span>'}</div></div>
+              <div><div class="q">¿Por qué no basta la media?</div><div class="a">La media resume todo en un número; los percentiles muestran <b>cómo se reparten</b> los lotes y hasta dónde llega el mejor desempeño.</div></div>
+            </div>
+          </div>
         </div>
       </div>
     </section>`;
-    // ---- Tabla con búsqueda y ordenamiento ----
-    let view = 'raw', sortKey = null, dir = 1;
-    const tbl = $('#tbl'), q = $('#q');
-    const draw = () => {
-      let cols, data;
-      if (view === 'raw') { cols = D.cols; data = D.rows; }
-      else {
-        cols = groups[0].req !== undefined ? ['Grupo', 'Peticiones', 'Hits', 'Misses', 'Tasa'] : ['Grupo', 'Tasa'];
-        data = groups.map(g => g.req !== undefined ? { Grupo: g.label, Peticiones: g.req, Hits: g.hits, Misses: g.req - g.hits, Tasa: +g.rate.toFixed(4) } : { Grupo: g.label, Tasa: +g.rate.toFixed(4) });
-      }
-      const term = q.value.trim().toLowerCase();
-      if (term) data = data.filter(r => cols.some(c => String(r[c] ?? '').toLowerCase().includes(term)));
-      if (sortKey && cols.includes(sortKey)) data = [...data].sort((a, b) => {
-        const x = toNum(a[sortKey]), y = toNum(b[sortKey]);
-        return (Number.isFinite(x) && Number.isFinite(y) ? x - y : String(a[sortKey]).localeCompare(String(b[sortKey]))) * dir;
-      });
-      tbl.tHead.innerHTML = '<tr>' + cols.map(c => `<th class="sort" data-k="${c}">${c}${sortKey === c ? (dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('') + '</tr>';
-      const shown = data.slice(0, 1000);
-      tbl.tBodies[0].innerHTML = shown.map(r => '<tr>' + cols.map(c => {
-        let v = r[c];
-        const isHit = view === 'raw' && D.hitCol && c === D.hitCol.name;
-        if (isHit) return `<td class="mono ${toBin(v) ? 'chip-hit' : 'chip-miss'}">${v} ${toBin(v) ? 'hit' : 'miss'}</td>`;
-        return `<td class="mono">${v ?? ''}</td>`;
-      }).join('') + '</tr>').join('');
-      $('#tInfo').textContent = `${int(data.length)} filas${data.length > 1000 ? ' (se muestran 1000)' : ''}`;
-    };
-    Life.on(tbl, 'click', e => { const th = e.target.closest('th'); if (!th) return; const k = th.dataset.k; dir = sortKey === k ? -dir : 1; sortKey = k; draw(); });
-    Life.on(q, 'input', draw);
-    Life.on($('#viewSeg'), 'click', e => { const b = e.target.closest('button'); if (!b) return; view = b.dataset.v; sortKey = null; [...$('#viewSeg').children].forEach(x => x.classList.toggle('on', x === b)); draw(); });
-    const gs = $('#gs'); if (gs) Life.on(gs, 'change', () => { groupSize = +gs.value; recompute(); toast(`Lotes de ${groupSize} peticiones: todo se recalculó.`); });
-    draw();
   }
 });
 
-/* ---------------- Escena 4 · MTC y dispersión ---------------- */
-SCENES.push({
-  title: 'MTC',
-  render(el) {
-    const { desc, E, x, norm } = R;
-    // Recta numérica: puntos apilados (dot plot) y marcadores
-    const W = 760, H = 360, pad = 50;
-    // El eje incluye el 0.85 del contrato si está razonablemente cerca de los datos
-    let lo = Math.min(desc.min, desc.mean - desc.sd), hi = Math.max(desc.max, desc.mean + desc.sd);
-    if (P0 > hi && P0 - hi < 3 * ((hi - lo) || 0.05)) hi = P0;
-    if (P0 < lo && lo - P0 < 3 * ((hi - lo) || 0.05)) lo = P0;
-    const span = (hi - lo) || 1, a = lo - span * 0.08, b = hi + span * 0.08;
-    const sx = v => pad + (v - a) / (b - a) * (W - 2 * pad);
-    const base = 200;
-    // Dot plot: el radio se ajusta para que la pila más alta quepa en 130 px
-    const r0 = Math.max(2.5, Math.min(7, 260 / Math.max(10, x.length)));
-    const keyOf = (v, rr) => Math.round(sx(v) / (rr * 2.1));
-    const tallest = rr => { const c = new Map(); x.forEach(v => c.set(keyOf(v, rr), (c.get(keyOf(v, rr)) || 0) + 1)); return Math.max(...c.values()); };
-    let r = r0; while (r > 1.5 && tallest(r) * r * 2.1 > 130) r -= 0.25;
-    const stackCount = new Map(); let dots = '';
-    Stats.sorted(x).forEach((v, i) => {
-      const key = keyOf(v, r);
-      const c = stackCount.get(key) || 0; stackCount.set(key, c + 1);
-      dots += `<circle class="rv" style="--d:${(Math.min(i, 60) * 0.035).toFixed(2)}s" cx="${sx(v)}" cy="${base - r - 2 - c * r * 2.1}" r="${r}" fill="#59c4ff" opacity=".85"/>`;
-    });
-    const t0 = Math.min(x.length, 60) * 0.035 + 0.3;
-    const raw = [
-      ['Mín', desc.min], ['Q1', desc.q1], ['Mediana', desc.median], ['Moda', desc.mode.value],
-      ['Media x̄', desc.mean], ['Q3', desc.q3], ['P95', desc.p95], ['P99', desc.p99], ['Máx', desc.max]
-    ].filter(m => m[1] !== null);
-    // Medidas con el mismo valor se agrupan en una sola etiqueta (p. ej. "Mediana = Q3 = Máx")
-    const marks = [];
-    raw.forEach(([lab, v]) => { const g = marks.find(m => Math.abs(sx(m.v) - sx(v)) < 2); g ? g.labs.push(lab) : marks.push({ v, labs: [lab] }); });
-    marks.sort((p, q) => p.v - q.v);
-    let mk = '';
-    marks.forEach((m, i) => {
-      const isMean = m.labs.includes('Media x̄'), col = isMean ? '#ff7a1a' : m.labs.includes('Mediana') ? '#2fe0a0' : m.labs.includes('Moda') ? '#ffc247' : '#a98bff';
-      const lvl = i % 3, y2 = base + 28 + lvl * 30;
-      const anchor = sx(m.v) < 140 ? 'start' : sx(m.v) > W - 140 ? 'end' : 'middle';
-      // Etiquetas largas (varias medidas iguales) se parten en líneas de 3
-      const lines = []; for (let j = 0; j < m.labs.length; j += 3) lines.push(m.labs.slice(j, j + 3).join(' = '));
-      lines[lines.length - 1] += ` ${fmt(m.v, 3)}`;
-      mk += `<g class="rv" style="--d:${(t0 + i * 0.5).toFixed(2)}s"><line x1="${sx(m.v)}" x2="${sx(m.v)}" y1="${base - 4}" y2="${y2 - 14}" stroke="${col}" stroke-width="2"/>
-        <text x="${sx(m.v)}" y="${y2}" fill="${col}" font-size="14" font-weight="700" text-anchor="${anchor}">${lines.map((l, j) => `<tspan x="${sx(m.v)}" dy="${j ? 17 : 0}">${l}${j < lines.length - 1 ? ' =' : ''}</tspan>`).join('')}</text></g>`;
-    });
-    const tS = t0 + marks.length * 0.5 + 0.2;
-    const band = `<g class="rv" style="--d:${tS}s"><rect x="${sx(desc.mean - desc.sd)}" y="${base - 150}" width="${sx(desc.mean + desc.sd) - sx(desc.mean - desc.sd)}" height="150" fill="#ff7a1a" opacity=".08"/>
-      <line x1="${sx(desc.mean - desc.sd)}" x2="${sx(desc.mean + desc.sd)}" y1="${base - 156}" y2="${base - 156}" stroke="#ff7a1a" stroke-width="2"/>
-      <text x="${sx(desc.mean)}" y="${base - 164}" fill="#ff7a1a" font-size="14" text-anchor="middle" font-weight="700">x̄ ± s = [${fmt(desc.mean - desc.sd, 3)} ; ${fmt(desc.mean + desc.sd, 3)}]</text></g>`;
-    let ticks = '';
-    for (let i = 0; i <= 6; i++) { const v = a + (b - a) * i / 6; ticks += `<line x1="${sx(v)}" x2="${sx(v)}" y1="${base}" y2="${base + 6}" stroke="#647086"/><text x="${sx(v)}" y="${H - 6}" fill="#647086" font-size="12" text-anchor="middle">${v.toFixed(3)}</text>`; }
-    const p85 = 0.85 >= a && 0.85 <= b ? `<g class="rv" style="--d:${tS + .4}s"><line x1="${sx(.85)}" x2="${sx(.85)}" y1="20" y2="${base}" stroke="#ff3d4a" stroke-dasharray="6 5" stroke-width="2"/><text x="${sx(.85)}" y="16" fill="#ff3d4a" font-size="13" text-anchor="middle" font-weight="700">contrato 0.85</text></g>` : '';
+/* ---------------- Modelo de medidas (escenas 3 y 4) ----------------
+   Valores, interpretación y procedimiento paso a paso de cada medida. */
+function measureModel() {
+  const { desc, E, x } = R;
     const u = R.D.mode === 'requests' ? 'lotes' : 'intervalos', u1 = u.slice(0, -1);
     const pts = v => (v * 100).toFixed(1) + ' pts';
     const below = desc.mean < P0 ? `<span class="bad">${pts(P0 - desc.mean)} bajo el 85 %</span>` : '<span class="ok">sobre el 85 %</span>';
@@ -1175,7 +1082,7 @@ SCENES.push({
       'Rango': [
         { t: 'Restar mínimo al máximo', f: T`R=x_{max}-x_{min}=${f3(desc.max)}-${f3(desc.min)}=${fmt(desc.range)}`, r: `R = ${fmt(desc.range)} = ${pts(desc.range)}`, xl: `=MAX(${E.rate})-MIN(${E.rate})` }],
       'Rango intercuartílico': [
-        { t: 'Calcular Q1 y Q3', r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)}`, n: 'Ver el paso a paso de Q1 y Q3 arriba.' },
+        { t: 'Calcular Q1 y Q3', r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)}`, n: 'Q1 y Q3 se calculan en la escena 3 (Datos).' },
         { t: 'Restar', f: T`RIC=Q_3-Q_1=${fmt(desc.q3)}-${fmt(desc.q1)}=${fmt(desc.iqr)}`, xl: `=CUARTIL.INC(${E.rate};3)-CUARTIL.INC(${E.rate};1)` }],
       'Varianza': [
         { t: 'Restar la media a cada dato y elevar al cuadrado', f: few ? T`\sum(x_i-\bar x)^2=${freq.map(q => `(${f3(q.v)}-${fmt(desc.mean)})^2\\times${q.c}`).join('+')}` : T`\sum(x_i-\bar x)^2`, r: `Σ(xᵢ − x̄)² = ${fmt(SS, 6)}` },
@@ -1192,10 +1099,6 @@ SCENES.push({
       ['Tendencia central', 'Media', T`\bar x`, desc.mean, 'Promedio de todas las tasas', `Tasa típica ${pct(desc.mean)}: ${below}`],
       [null, 'Mediana', T`Me`, desc.median, 'Valor del centro: deja 50 % a cada lado', `La mitad de los ${u} tuvo ≤ ${pct(desc.median)}`],
       [null, 'Moda', T`Mo`, desc.mode.value, 'Valor que más se repite', desc.mode.value !== null ? `${pct(desc.mode.value)} aparece ${desc.mode.count} de ${desc.m} veces` : 'Ningún valor se repite'],
-      ['Posición', 'Q1', T`Q_1`, desc.q1, '25 % de los datos queda por debajo', `El 25 % peor de los ${u} tuvo ≤ ${pct(desc.q1)}`],
-      [null, 'Q3', T`Q_3`, desc.q3, '75 % de los datos queda por debajo', `El 75 % de los ${u} tuvo ≤ ${pct(desc.q3)}`],
-      [null, 'Percentil 95', T`P_{95}`, desc.p95, '95 % de los datos queda por debajo', `95 % de los ${u} ≤ ${pct(desc.p95)}${desc.p95 < P0 ? ' → <span class="bad">no llega al 85 %</span>' : ''}`],
-      [null, 'Percentil 99', T`P_{99}`, desc.p99, '99 % de los datos queda por debajo', `Casi todos los ${u} ≤ ${pct(desc.p99)}${desc.p99 < P0 ? ' → <span class="bad">ni el mejor tramo cumple</span>' : ''}`],
       ['Dispersión', 'Mín · Máx', T`x_{min}\cdot x_{max}`, null, 'Peor y mejor dato', `Peor ${u1}: ${pct(desc.min)} · mejor: ${pct(desc.max)}`],
       [null, 'Rango', T`R`, desc.range, 'Máx − Mín: amplitud total', `${pts(desc.range)} entre el peor y el mejor ${u1}`],
       [null, 'Rango intercuartílico', T`RIC`, desc.iqr, 'Q3 − Q1: amplitud del 50 % central', desc.iqr === 0 ? 'El 50 % central tiene el mismo valor' : `El 50 % central varía ${pts(desc.iqr)}`],
@@ -1203,7 +1106,76 @@ SCENES.push({
       [null, 'Desv. estándar', T`s`, desc.sd, 'Distancia típica de un dato a la media', `Cada ${u1} se aleja ± ${pts(desc.sd)} de la media`],
       [null, 'Coef. variación', T`CV`, desc.cv, 's / x̄: dispersión relativa', `${pct(desc.cv, 1)} → variación ${cvTxt}`]
     ];
+    const pos = [
+      ['Medidas de posición', 'Q1', T`Q_1`, desc.q1, '25 % de los datos queda por debajo', `El 25 % peor de los ${u} tuvo ≤ ${pct(desc.q1)}`],
+      [null, 'Q3', T`Q_3`, desc.q3, '75 % de los datos queda por debajo', `El 75 % de los ${u} tuvo ≤ ${pct(desc.q3)}`],
+      [null, 'Percentil 95', T`P_{95}`, desc.p95, '95 % de los datos queda por debajo', `95 % de los ${u} ≤ ${pct(desc.p95)}${desc.p95 < P0 ? ' → <span class="bad">no llega al 85 %</span>' : ''}`],
+      [null, 'Percentil 99', T`P_{99}`, desc.p99, '99 % de los datos queda por debajo', `Casi todos los ${u} ≤ ${pct(desc.p99)}${desc.p99 < P0 ? ' → <span class="bad">ni el mejor tramo cumple</span>' : ''}`],
+    ];
     const val = (n, v) => n === 'Mín · Máx' ? `${fmt(desc.min, 3)} · ${fmt(desc.max, 3)}` : v === null ? '#N/A' : n === 'Coef. variación' ? pct(v, 2) : fmt(v, n === 'Varianza' ? 6 : 4);
+  return { rows, pos, P, val, u, u1, pts, cvTxt };
+}
+/** Tabla de medidas con botón "Paso a paso" por fila. */
+function measureTable(rows, P, val, pref) {
+  return `<div class="tbl-wrap" style="max-height:none"><table class="mtc">
+    <thead><tr><th>Medida</th><th>Valor</th><th style="text-align:left">¿Qué representa?</th><th style="text-align:left">¿Cómo se lee aquí?</th></tr></thead>
+    <tbody>${rows.map(([g, nm, s, v, what, read], i) => `${g ? `<tr><td colspan="4" style="background:#141b27;color:var(--orange);font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase">${g}</td></tr>` : ''}<tr class="rv" style="--d:${(0.1 + i * 0.05).toFixed(2)}s"><td><b>${nm}</b><br>${tex(s)}${P[nm] ? procBtn(pref + i) : ''}</td><td class="mono">${val(nm, v)}</td><td class="what">${what}</td><td class="read">${read}</td></tr>${P[nm] ? `<tr class="proc" id="${pref}${i}"><td colspan="4">${procHTML(P[nm])}</td></tr>` : ''}`).join('')}</tbody>
+  </table></div>`;
+}
+
+/* ---------------- Escena 4 · MTC y dispersión ---------------- */
+SCENES.push({
+  title: 'MTC',
+  render(el) {
+    const { desc, E, x, norm } = R;
+    // Recta numérica: puntos apilados (dot plot) y marcadores
+    const W = 760, H = 360, pad = 50;
+    // El eje incluye el 0.85 del contrato si está razonablemente cerca de los datos
+    let lo = Math.min(desc.min, desc.mean - desc.sd), hi = Math.max(desc.max, desc.mean + desc.sd);
+    if (P0 > hi && P0 - hi < 3 * ((hi - lo) || 0.05)) hi = P0;
+    if (P0 < lo && lo - P0 < 3 * ((hi - lo) || 0.05)) lo = P0;
+    const span = (hi - lo) || 1, a = lo - span * 0.08, b = hi + span * 0.08;
+    const sx = v => pad + (v - a) / (b - a) * (W - 2 * pad);
+    const base = 200;
+    // Dot plot: el radio se ajusta para que la pila más alta quepa en 130 px
+    const r0 = Math.max(2.5, Math.min(7, 260 / Math.max(10, x.length)));
+    const keyOf = (v, rr) => Math.round(sx(v) / (rr * 2.1));
+    const tallest = rr => { const c = new Map(); x.forEach(v => c.set(keyOf(v, rr), (c.get(keyOf(v, rr)) || 0) + 1)); return Math.max(...c.values()); };
+    let r = r0; while (r > 1.5 && tallest(r) * r * 2.1 > 130) r -= 0.25;
+    const stackCount = new Map(); let dots = '';
+    Stats.sorted(x).forEach((v, i) => {
+      const key = keyOf(v, r);
+      const c = stackCount.get(key) || 0; stackCount.set(key, c + 1);
+      dots += `<circle class="rv" style="--d:${(Math.min(i, 60) * 0.035).toFixed(2)}s" cx="${sx(v)}" cy="${base - r - 2 - c * r * 2.1}" r="${r}" fill="#59c4ff" opacity=".85"/>`;
+    });
+    const t0 = Math.min(x.length, 60) * 0.035 + 0.3;
+    const raw = [
+      ['Mín', desc.min], ['Mediana', desc.median], ['Moda', desc.mode.value],
+      ['Media x̄', desc.mean], ['Máx', desc.max]
+    ].filter(m => m[1] !== null);
+    // Medidas con el mismo valor se agrupan en una sola etiqueta (p. ej. "Mediana = Q3 = Máx")
+    const marks = [];
+    raw.forEach(([lab, v]) => { const g = marks.find(m => Math.abs(sx(m.v) - sx(v)) < 2); g ? g.labs.push(lab) : marks.push({ v, labs: [lab] }); });
+    marks.sort((p, q) => p.v - q.v);
+    let mk = '';
+    marks.forEach((m, i) => {
+      const isMean = m.labs.includes('Media x̄'), col = isMean ? '#ff7a1a' : m.labs.includes('Mediana') ? '#2fe0a0' : m.labs.includes('Moda') ? '#ffc247' : '#a98bff';
+      const lvl = i % 3, y2 = base + 28 + lvl * 30;
+      const anchor = sx(m.v) < 140 ? 'start' : sx(m.v) > W - 140 ? 'end' : 'middle';
+      // Etiquetas largas (varias medidas iguales) se parten en líneas de 3
+      const lines = []; for (let j = 0; j < m.labs.length; j += 3) lines.push(m.labs.slice(j, j + 3).join(' = '));
+      lines[lines.length - 1] += ` ${fmt(m.v, 3)}`;
+      mk += `<g class="rv" style="--d:${(t0 + i * 0.5).toFixed(2)}s"><line x1="${sx(m.v)}" x2="${sx(m.v)}" y1="${base - 4}" y2="${y2 - 14}" stroke="${col}" stroke-width="2"/>
+        <text x="${sx(m.v)}" y="${y2}" fill="${col}" font-size="14" font-weight="700" text-anchor="${anchor}">${lines.map((l, j) => `<tspan x="${sx(m.v)}" dy="${j ? 17 : 0}">${l}${j < lines.length - 1 ? ' =' : ''}</tspan>`).join('')}</text></g>`;
+    });
+    const tS = t0 + marks.length * 0.5 + 0.2;
+    const band = `<g class="rv" style="--d:${tS}s"><rect x="${sx(desc.mean - desc.sd)}" y="${base - 150}" width="${sx(desc.mean + desc.sd) - sx(desc.mean - desc.sd)}" height="150" fill="#ff7a1a" opacity=".08"/>
+      <line x1="${sx(desc.mean - desc.sd)}" x2="${sx(desc.mean + desc.sd)}" y1="${base - 156}" y2="${base - 156}" stroke="#ff7a1a" stroke-width="2"/>
+      <text x="${sx(desc.mean)}" y="${base - 164}" fill="#ff7a1a" font-size="14" text-anchor="middle" font-weight="700">x̄ ± s = [${fmt(desc.mean - desc.sd, 3)} ; ${fmt(desc.mean + desc.sd, 3)}]</text></g>`;
+    let ticks = '';
+    for (let i = 0; i <= 6; i++) { const v = a + (b - a) * i / 6; ticks += `<line x1="${sx(v)}" x2="${sx(v)}" y1="${base}" y2="${base + 6}" stroke="#647086"/><text x="${sx(v)}" y="${H - 6}" fill="#647086" font-size="12" text-anchor="middle">${v.toFixed(3)}</text>`; }
+    const p85 = 0.85 >= a && 0.85 <= b ? `<g class="rv" style="--d:${tS + .4}s"><line x1="${sx(.85)}" x2="${sx(.85)}" y1="20" y2="${base}" stroke="#ff3d4a" stroke-dasharray="6 5" stroke-width="2"/><text x="${sx(.85)}" y="16" fill="#ff3d4a" font-size="13" text-anchor="middle" font-weight="700">contrato 0.85</text></g>` : '';
+    const { rows, P, val, u, u1, pts, cvTxt } = measureModel();
     el.innerHTML = `
     <section class="scene">
       <div class="kicker">Escena 4 · Medidas de tendencia central y dispersión</div>
@@ -1212,17 +1184,13 @@ SCENES.push({
       <div class="grid2">
         <div class="stack">
           <div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%">${band}${p85}<line x1="${pad - 10}" x2="${W - pad + 10}" y1="${base}" y2="${base}" stroke="#93a0b4" stroke-width="2"/>${ticks}${dots}${mk}</svg></div>
-          <div class="card"><div class="tbl-wrap" style="max-height:none"><table class="mtc">
-            <thead><tr><th>Medida</th><th>Valor</th><th style="text-align:left">¿Qué representa?</th><th style="text-align:left">¿Cómo se lee aquí?</th></tr></thead>
-            <tbody>${rows.map(([g, nm, s, v, what, read], i) => `${g ? `<tr><td colspan="4" style="background:#141b27;color:var(--orange);font:700 12px var(--mono);letter-spacing:.12em;text-transform:uppercase">${g}</td></tr>` : ''}<tr class="rv" style="--d:${(0.1 + i * 0.05).toFixed(2)}s"><td><b>${nm}</b><br>${tex(s)}${P[nm] ? procBtn('pm' + i) : ''}</td><td class="mono">${val(nm, v)}</td><td class="what">${what}</td><td class="read">${read}</td></tr>${P[nm] ? `<tr class="proc" id="pm${i}"><td colspan="4">${procHTML(P[nm])}</td></tr>` : ''}`).join('')}</tbody>
-          </table></div></div>
+          <div class="card">${measureTable(rows, P, val, 'pm')}</div>
         </div>
         <div class="stack">
           <div class="card meaning"><h3>Preguntas clave</h3>
             <div class="qa">
               <div><div class="q">¿Cuál es la tasa típica?</div><div class="a">Media <b>${pct(desc.mean)}</b> · mediana <b>${pct(desc.median)}</b>. Ambas bajo el 85 %.</div></div>
-              <div><div class="q">¿Por qué la media no basta?</div><div class="a">${norm.distinct <= 3 ? `Los ${u} solo valen ${[...new Set(x.map(v => pct(v, 0)))].sort().join(' o ')}: <b>ningún ${u1} tuvo ${pct(desc.mean)}</b>. La media es un punto donde no hay datos.` : 'La media se mueve con los valores extremos; los percentiles muestran cómo se reparten los datos.'}</div></div>
-              <div><div class="q">¿Qué aportan P95 y P99?</div><div class="a">Muestran el <b>techo</b> del servicio: el 95 % y el 99 % de los ${u} quedaron en ≤ <b>${pct(desc.p95)}</b> y ≤ <b>${pct(desc.p99)}</b>.${desc.p99 < P0 ? ' <span class="bad">Ni el mejor tramo llegó al 85 %.</span>' : ''}</div></div>
+              <div><div class="q">¿Por qué la media no basta?</div><div class="a">${norm.distinct <= 3 ? `Los ${u} solo valen ${joinY([...new Set(x.map(v => +v.toFixed(6)))].sort((p, q) => p - q).map(v => pct(v, 0)), 'o')}: <b>ningún ${u1} tuvo ${pct(desc.mean)}</b>. La media es un punto donde no hay datos.` : 'La media se mueve con los valores extremos; los percentiles muestran cómo se reparten los datos.'}</div></div>
               <div><div class="q">¿Cuánto varía?</div><div class="a">s = <b>${fmt(desc.sd, 4)}</b> (± ${pts(desc.sd)}) · CV = <b>${pct(desc.cv, 1)}</b> → variación ${cvTxt}.</div></div>
               <div><div class="q">¿Media, mediana y moda coinciden?</div><div class="a">${Math.abs(desc.mean - desc.median) < 0.25 * desc.sd ? 'Sí: indicio de simetría.' : `No (${fmt(desc.mean, 3)} vs ${fmt(desc.median, 3)}): media &lt; mediana → <b>asimetría negativa</b>. Se analiza en la escena 6.`}</div></div>
             </div>
@@ -1267,7 +1235,7 @@ SCENES.push({
           <div class="card meaning"><h3>¿Qué significa?</h3>
             <ul class="keys">
               <li>Clase modal: <b>${lbl(hist.modal)}</b> con ${hist.modal.f} ${R.D.mode === 'requests' ? 'lotes' : 'intervalos'} (${pct(hist.modal.fr)}).</li>
-              ${R.norm.distinct <= 3 ? `<li>Solo hay <b>${R.norm.distinct} valores</b> distintos (${[...new Set(R.x.map(v => v.toFixed(2)))].sort().join(' y ')}): clases vacías en el medio.</li><li><b>No hay forma de campana</b>: primera señal de que no es normal.</li>` : `<li>¿Las barras forman una campana alrededor de x̄ = ${fmt(desc.mean, 3)}? Primera pista de normalidad.</li>`}
+              ${R.norm.distinct <= 3 ? `<li>Solo hay <b>${R.norm.distinct} valores</b> distintos (${joinY([...new Set(R.x.map(v => v.toFixed(2)))].sort())}): clases vacías en el medio.</li><li><b>No hay forma de campana</b>: primera señal de que no es normal.</li>` : `<li>¿Las barras forman una campana alrededor de x̄ = ${fmt(desc.mean, 3)}? Primera pista de normalidad.</li>`}
               ${hist.classes.every(c => c.ls <= P0 + 1e-9) ? '<li>Todas las clases quedan <span class="bad">bajo el 85 %</span>.</li>' : ''}
             </ul>
           </div>
@@ -1314,7 +1282,7 @@ SCENES.push({
     const skTxt = Math.abs(desc.skew) < 0.5 ? 'aprox. simétrica' : desc.skew < 0 ? 'sesgo a la izquierda' : 'sesgo a la derecha';
     // Criterios: [nombre, qué se espera si fuera normal, qué se observa, ¿cumple?]
     const crit = [
-      ['1 · Forma del histograma', 'Campana: muchos valores, más datos en el centro', norm.distinct <= 3 ? `Solo ${norm.distinct} valores (${valores.join(' y ')}), barras separadas` : `${norm.distinct} valores distintos`, norm.shapeOk],
+      ['1 · Forma del histograma', 'Campana: muchos valores, más datos en el centro', norm.distinct <= 3 ? `Solo ${norm.distinct} valores (${joinY(valores)}), barras separadas` : `${norm.distinct} valores distintos`, norm.shapeOk],
       ['2 · Media = mediana = moda', `Las tres casi iguales (diferencia ≤ s/4 = ${fmt(sym.tol, 3)})`, `x̄ = ${fmt(desc.mean, 3)} · Me = ${fmt(sym.median, 3)} · Mo = ${fmt(sym.mode, 3)}`, sym.ok],
       ['3 · Asimetría de Pearson', 'Sk ≈ 0 (se acepta |Sk| < 0.5)', `Sk = ${fmt(desc.skew, 2)} → ${skTxt}`, norm.skewOk],
       ['4 · Regla empírica', '68.3 % · 95.4 % · 99.7 % en ±1s, ±2s, ±3s', emp.map(e => pct(e.pct)).join(' · '), norm.empOk],
@@ -1362,7 +1330,7 @@ SCENES.push({
             <ul class="keys">
               ${verdict ? '<li>Los datos se comportan como una normal: se pueden usar métodos basados en ella.</li>' : `<li>La tasa por ${unidad} <b>no es normal</b>: ${!sym.ok || !norm.skewOk ? 'es asimétrica' : 'no tiene forma de campana'}${norm.distinct <= 3 ? ` y solo toma ${norm.distinct} valores` : ''}.</li>`}
               <li><b>¿Afecta la prueba de hipótesis?</b> No: la prueba usa los ${int(R.prop.n)} ceros y unos (binomial), que se aproxima a la normal si ${tex(T`np_0\ge5`)} y ${tex(T`n(1-p_0)\ge5`)} (escena 8).</li>
-              ${R.periodic ? `<li class="am">Causa: los misses caen cada ${R.periodic.gap} peticiones, por eso las tasas solo valen ${valores.join(' o ')}.</li>` : ''}
+              ${R.periodic ? `<li class="am">Causa: los misses caen cada ${R.periodic.gap} peticiones, por eso las tasas solo valen ${joinY(valores, 'o')}.</li>` : ''}
             </ul>
           </div>
           ${how([
