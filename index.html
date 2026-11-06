@@ -1437,7 +1437,7 @@ SCENES.push({
       { h: 'Paso 3 · Error estándar con p₀', b: tex(T`\sigma_{\bar p}=\sqrt{\frac{p_0(1-p_0)}{n}}=\sqrt{\frac{0.85(0.15)}{${prop.n}}}=${fmt(test.se0, 5)}`, true) + `<p class="small muted" style="margin:0">Se usa p₀ (no p̂) porque se calcula <i>suponiendo que H₀ es cierta</i>.</p>` },
       { h: 'Paso 4 · Estadístico de prueba', b: tex(T`z=\frac{\bar p-p_0}{\sigma_{\bar p}}=\frac{${fmt(prop.phat)}-0.85}{${fmt(test.se0, 5)}}=\mathbf{${fmt(test.z)}}`, true) + (binom ? `<p class="small muted" style="margin:0">Equivale a estandarizar el número de hits: ${tex(T`z=\frac{x-\mu}{\sigma}=\frac{${binom.x}-${fmt(binom.mu, 1)}}{${fmt(binom.sigma, 4)}}=${fmt(binom.z)}`)}. ${Math.abs(binom.z) > 3 ? `Por la regla empírica, quedar a más de 3σ ocurre menos del 0.3 % de las veces.` : ''}</p>` : '') },
       { h: 'Paso 5 · Método del valor crítico', b: `${tex(T`-z_{0.05}=-1.645\qquad -z_{0.01}=-2.326`)}<p class="small" style="margin:.3em 0 0">Regla: rechazar H₀ si ${tex(T`z\le -z_\alpha`)}. ${fmt(test.z, 4)} ${test.z <= test.zc05 ? '≤' : '>'} −1.645 y ${fmt(test.z, 4)} ${test.z <= test.zc01 ? '≤' : '>'} −2.326.</p>` },
-      { h: 'Paso 6 · Método del valor p', b: `${tex(T`\text{valor }p=P(Z\le ${fmt(test.z)})=${texP(test.pval)}`, true)}<div class="big-num" id="pAnim" style="color:var(--blue)">0.0000</div><p class="small muted" style="margin:.3em 0 0">En decimal: ${test.pval.toFixed(8)}. Es el área de la cola izquierda de la tabla normal estándar. Regla: rechazar H₀ si valor p ≤ α.</p>` },
+      { h: 'Paso 6 · Método del valor p', b: `<p style="margin:.2em 0 .5em;font-size:17px;font-weight:600;color:var(--amber)">Si Fastly realmente hubiera cumplido el contrato, ¿qué tan probable sería obtener una muestra tan mala como la nuestra solo por casualidad?</p><p class="small muted" style="margin:.3em 0 0">Valor p = ${test.pval.toFixed(8)}. Es el área de la cola izquierda de la tabla normal estándar. Regla: rechazar H₀ si valor p ≤ α.</p>` },
       { h: 'Paso 7 · Decisión', b: `<table class="decision-tbl"><thead><tr><th>α</th><th>Valor crítico</th><th>Valor p</th><th>Decisión</th></tr></thead><tbody>
           ${[[0.05, test.zc05, test.reject05], [0.01, test.zc01, test.reject01]].map(([a, zc, rj]) => `<tr><td class="mono">${a}</td><td>${fmt(test.z, 3)} ${test.z <= zc ? '≤' : '>'} ${fmt(zc, 3)}</td><td>${fmtP(test.pval)} ${test.pval <= a ? '≤' : '>'} ${a}</td><td class="${rj ? 'bad' : 'ok'}"><b>${rj ? 'Rechazar H₀' : 'No rechazar H₀'}</b></td></tr>`).join('')}
         </tbody></table>
@@ -1484,7 +1484,7 @@ SCENES.push({
       steps.forEach((_, i) => { const s = $('#st' + i); s.classList.remove('on', 'cur'); });
       drawCurve(NaN, false);
       const at = i => { steps.forEach((_, j) => $('#st' + j).classList.toggle('cur', j === i)); $('#st' + i).classList.add('on'); };
-      if (instant) { steps.forEach((_, i) => $('#st' + i).classList.add('on')); drawCurve(test.z, true); $('#pAnim').textContent = fmtP(test.pval); return; }
+      if (instant) { steps.forEach((_, i) => $('#st' + i).classList.add('on')); drawCurve(test.z, true); if ($('#pAnim')) $('#pAnim').textContent = fmtP(test.pval); return; }
       steps.forEach((_, i) => Life.timeout(() => {
         at(i);
         if (i === 3) tween(1600, k => drawCurve(test.z * k, false));       // z viaja desde 0
