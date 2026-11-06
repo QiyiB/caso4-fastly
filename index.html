@@ -1457,11 +1457,7 @@ SCENES.push({
           </div>
           <div class="card ${big ? 'warn' : ''}">
             <h3>Significancia estadística vs. práctica</h3>
-            <ul class="keys small">
-              <li>p̂ − p₀ = <b>${(dif * 100).toFixed(1)} pts</b>.</li>
-              <li>Misses: de 15 % a <b>${pct(1 - prop.phat)}</b> → el origen recibe <b>${pct((1 - prop.phat) / (1 - P0) - 1, 0)} ${dif < 0 ? 'más' : 'menos'}</b> tráfico.</li>
-              <li>${Math.abs(dif) >= 0.02 ? 'Diferencia <b>relevante en la práctica</b>: suficiente para saturar la base de datos.' : 'Diferencia pequeña en la práctica.'}</li>
-            </ul>
+            <p style="margin:0">La diferencia no es solo estadística, también importa en la práctica. Los fallos pasaron del <b>15 %</b> pactado al <b>${pct(1 - prop.phat)}</b>. Eso significa que los servidores de los medios recibieron <b>${pct((1 - prop.phat) / (1 - P0) - 1, 0)} ${dif < 0 ? 'más' : 'menos'}</b> tráfico del que debían soportar${dif < 0 ? ', suficiente para tumbar sus bases de datos' : ''}.</p>
           </div>
           ${testAlt ? `<div class="card"><h3>Versión con n = número de intervalos (${propAlt.n})</h3><p class="small" style="margin:0">${tex(T`z=\frac{${fmt(propAlt.phat)}-0.85}{\sqrt{0.85(0.15)/${propAlt.n}}}=${fmt(testAlt.z)}`)}, valor p = ${fmtP(testAlt.pval)} → ${testAlt.reject05 ? '<b class="bad">rechazar H₀</b>' : '<b class="ok">no rechazar H₀</b>'} (α = 0.05). Con menos «n» el error estándar crece y la prueba es más conservadora.</p></div>` : ''}
         </div>
