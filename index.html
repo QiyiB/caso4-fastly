@@ -1081,9 +1081,6 @@ function measureModel() {
         { t: 'Tomar el primero y el último', f: T`x_{min}=x_{(1)}=${f3(desc.min)},\qquad x_{max}=x_{(${n})}=${f3(desc.max)}`, xl: `=MIN(${E.rate})  ·  =MAX(${E.rate})` }],
       'Rango': [
         { t: 'Restar mínimo al máximo', f: T`R=x_{max}-x_{min}=${f3(desc.max)}-${f3(desc.min)}=${fmt(desc.range)}`, r: `R = ${fmt(desc.range)} = ${pts(desc.range)}`, xl: `=MAX(${E.rate})-MIN(${E.rate})` }],
-      'Rango intercuartílico': [
-        { t: 'Calcular Q1 y Q3', r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)}`, n: 'Q1 y Q3 se calculan en la escena 3 (Datos).' },
-        { t: 'Restar', f: T`RIC=Q_3-Q_1=${fmt(desc.q3)}-${fmt(desc.q1)}=${fmt(desc.iqr)}`, xl: `=CUARTIL.INC(${E.rate};3)-CUARTIL.INC(${E.rate};1)` }],
       'Varianza': [
         { t: 'Restar la media a cada dato y elevar al cuadrado', f: few ? T`\sum(x_i-\bar x)^2=${freq.map(q => `(${f3(q.v)}-${fmt(desc.mean)})^2\\times${q.c}`).join('+')}` : T`\sum(x_i-\bar x)^2`, r: `Σ(xᵢ − x̄)² = ${fmt(SS, 6)}` },
         { t: 'Dividir entre n − 1 (varianza muestral)', f: T`s^2=\frac{\sum(x_i-\bar x)^2}{n-1}=\frac{${fmt(SS, 6)}}{${n - 1}}=${fmt(desc.var, 6)}`, r: `s² = ${fmt(desc.var, 6)}`, xl: `=VAR.S(${E.rate})` }],
@@ -1101,7 +1098,6 @@ function measureModel() {
       [null, 'Moda', T`Mo`, desc.mode.value, 'Valor que más se repite', desc.mode.value !== null ? `${pct(desc.mode.value)} aparece ${desc.mode.count} de ${desc.m} veces` : 'Ningún valor se repite'],
       ['Dispersión', 'Mín · Máx', T`x_{min}\cdot x_{max}`, null, 'Peor y mejor dato', `Peor ${u1}: ${pct(desc.min)} · mejor: ${pct(desc.max)}`],
       [null, 'Rango', T`R`, desc.range, 'Máx − Mín: amplitud total', `${pts(desc.range)} entre el peor y el mejor ${u1}`],
-      [null, 'Rango intercuartílico', T`RIC`, desc.iqr, 'Q3 − Q1: amplitud del 50 % central', desc.iqr === 0 ? 'El 50 % central tiene el mismo valor' : `El 50 % central varía ${pts(desc.iqr)}`],
       [null, 'Varianza', T`s^2`, desc.var, 'Promedio de desvíos al cuadrado', 'Unidades al cuadrado: se interpreta con s'],
       [null, 'Desv. estándar', T`s`, desc.sd, 'Distancia típica de un dato a la media', `Cada ${u1} se aleja ± ${pts(desc.sd)} de la media`],
       [null, 'Coef. variación', T`CV`, desc.cv, 's / x̄: dispersión relativa', `${pct(desc.cv, 1)} → variación ${cvTxt}`]
@@ -1201,7 +1197,7 @@ SCENES.push({
             { t: 'Varianza muestral (n − 1)', f: T`s^2=\frac{\sum (x_i-\bar x)^2}{n-1}`, s: T`s^2=\frac{${fmt(desc.var * (desc.m - 1), 6)}}{${desc.m - 1}}`, r: `s² = ${fmt(desc.var, 6)}`, xl: `=VAR.S(${E.rate})` },
             { t: 'Desviación estándar', f: T`s=\sqrt{s^2}`, s: T`s=\sqrt{${fmt(desc.var, 6)}}`, r: `s = ${fmt(desc.sd, 5)}`, xl: `=DESVEST.M(${E.rate})` },
             { t: 'Coeficiente de variación', f: T`CV=\frac{s}{\bar x}\times100\%`, s: T`CV=\frac{${fmt(desc.sd, 5)}}{${fmt(desc.mean, 4)}}\times100\%`, r: `CV = ${pct(desc.cv, 2)}` },
-            { t: 'Cuartiles (método inclusivo)', f: T`L_q=(n-1)\,q+1`, s: T`L_{0.25}=${((desc.m - 1) * .25 + 1).toFixed(2)},\;L_{0.75}=${((desc.m - 1) * .75 + 1).toFixed(2)}`, r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)} · RIC = ${fmt(desc.iqr)}`, xl: `=CUARTIL.INC(${E.rate};1)`, note: E.howRate },
+            { t: 'Cuartiles (método inclusivo)', f: T`L_q=(n-1)\,q+1`, s: T`L_{0.25}=${((desc.m - 1) * .25 + 1).toFixed(2)},\;L_{0.75}=${((desc.m - 1) * .75 + 1).toFixed(2)}`, r: `Q1 = ${fmt(desc.q1)} · Q3 = ${fmt(desc.q3)}`, xl: `=CUARTIL.INC(${E.rate};1)`, note: E.howRate },
             { t: 'Percentiles 95 y 99 (método inclusivo)', f: T`L_k=(n-1)\frac{k}{100}+1`, s: T`L_{95}=${((desc.m - 1) * .95 + 1).toFixed(2)},\;L_{99}=${((desc.m - 1) * .99 + 1).toFixed(2)}`, r: `P95 = ${fmt(desc.p95)} · P99 = ${fmt(desc.p99)}`, xl: `=PERCENTIL.INC(${E.rate};0,95)  ·  =PERCENTIL.INC(${E.rate};0,99)`, note: 'Se ordenan los datos y se toma el valor en la posición L (interpolando si cae entre dos datos).' },
             { t: 'Asimetría de Pearson', f: T`Sk=\frac{3(\bar x-Me)}{s}`, s: T`Sk=\frac{3(${fmt(desc.mean)}-${fmt(desc.median)})}{${fmt(desc.sd, 5)}}`, r: `Sk = ${fmt(desc.skew, 3)}`, xl: `=3*(PROMEDIO(${E.rate})-MEDIANA(${E.rate}))/DESVEST.M(${E.rate})` }
           ])}
